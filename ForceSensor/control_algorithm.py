@@ -4,8 +4,8 @@ from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 
 
-SAFETY_POSISTION = np.array([10, 10, 10, 150/1000, 150/1000, 150/1000])
-
+# SAFETY_POSISTION = np.array([10, 10, 10, 150/1000, 150/1000, 150/1000])
+SAFETY_POSISTION = np.array([10, 10, 10, 150, 150, 150])
 def _wrap_angle_rad(a):
     return (a + np.pi) % (2*np.pi) - np.pi
 
@@ -98,7 +98,7 @@ class ControlAlgorithm:
         target_pos = np.clip(target_pos, -safe_limit, safe_limit)
         return target_pos
 #test
-# 示例使用
+
 # M = np.diag([1,1,1,1,1,1])  # 示例质量矩阵
 # D = np.diag([20, 10, 10, 5, 5, 5])  # 示例阻尼矩阵
 # K = np.diag([100, 100, 100, 50, 50, 50])  # 示例刚度矩阵
@@ -106,7 +106,7 @@ class ControlAlgorithm:
 # control = ControlAlgorithm(M, D, K)
 # control.set_desired_trajectory([0,0,0,0,0,0])
 # # 示例力输入
-# F_e = np.array([10, 50, 100, 10, 10, 10])
+# F_e = np.array([10, 0, 0, 0, 0, 1000])
 # target_pos = [0,0,0,0,0,0]
 # Traj=[]
 # for i in range(400):
