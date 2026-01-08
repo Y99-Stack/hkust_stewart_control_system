@@ -187,7 +187,7 @@ class DofController:
             # print(f"DO: {command_message.DO}")
             # print(f"CyChoose: {command_message.CyChoose}")
             # print(f"JogSpeed: {command_message.JogSpeed}")
-            print(f"Send DOFs: {command_message.DOFs}")
+            # print(f"Send DOFs: {command_message.DOFs}")
             # print(f"AmplitudeArray: {command_message.AmplitudeArray}")
             # print(f"FrequencyArray: {command_message.FrequencyArray}")
             # print(f"PhaseArray: {command_message.PhaseArray}")
@@ -223,7 +223,7 @@ class DofController:
             self._is_connected = True
             # print(f"接收到的数据大小: {len(data)} 字节")
             #print(f"收到反馈: {feedback}")
-            print(f"收到的dofs:{feedback.AttitudesArray}")
+            # print(f"收到的dofs:{feedback.AttitudesArray}")
             return feedback
         except socket.timeout:
             print("连接超时，未收到下位机反馈")

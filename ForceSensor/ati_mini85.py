@@ -3,7 +3,7 @@ import numpy as np
 from nidaqmx.constants import TerminalConfiguration, AcquisitionType
 
 class ATIMini85:
-    def __init__(self, device="Dev2", calibration_file="ForceSensor/config/calibration_matrix.csv"):
+    def __init__(self, device="Dev1", calibration_file="ForceSensor/config/calibration_matrix.csv"):
         self.device = device
         self.calibration_matrix = np.loadtxt(calibration_file, delimiter=",")
         self.offset = np.zeros(6)  # offset for each channel

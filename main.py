@@ -16,14 +16,14 @@ import csv
 
 # Configurations
 CONTROL_CYCLE = 0.01  
-FORCE_SAMPLE_CYCLE = 0.001  
-FORCE_SAMPLE_RATE = 1000
-SAMPLE_CHUNK = 10      # number of samples to read each time (10 samples = 10ms at 1000Hz)
+FORCE_SAMPLE_CYCLE = 0.009  
+FORCE_SAMPLE_RATE = 100
+SAMPLE_CHUNK = 1      # number of samples to read each time (10 samples = 10ms at 1000Hz)
 SAVE_DATA_CYCLE = 0.01
 
 # 0414 No visualization no filter 6 axis write to csv
-"""
-class ControlSystem:
+
+"""class ControlSystem:
     def __init__(self):
         ip_setting =IpSetting()
         self.robot = DofController(ip_setting)
@@ -105,10 +105,11 @@ class ControlSystem:
                     if not self.force_event.is_set():
                         self.force_event.wait()
                     F_e = self.force_queue.get()
+                    print(f"F_e{F_e}")
                     F_e = -F_e
                     # F_e = self.force_queue.get() if not self.force_queue.empty() else np.zeros(6) # Get the latest force data from the queue
                     # F_e = [0, 0, 0, 0, 0, -10] # Test Step1: keep the Fz constant
-                    F_e[0:5] = 0 # Test Step2: only keep the z=axis force TODO: remember to remove this line 
+                    # F_e[0:5] = 0 # Test Step2: only keep the z=axis force TODO: remember to remove this line 
                     # F_e[5] = 0
 
                     # Excute the control algorithm
@@ -528,7 +529,7 @@ if __name__ == "__main__":
 """
 
 # 0728 6 axis constant force/torque no visulization write to csv
-class ControlSystem:
+"""class ControlSystem:
     def __init__(self):
         ip_setting =IpSetting()
         self.robot = DofController(ip_setting)
@@ -557,7 +558,7 @@ class ControlSystem:
 
         # Save data
         self.data = []
-        self.data_file_path = "data/Tx5Ty5Tz5Fx25NFy25NFz25N.csv" 
+        self.data_file_path = "data/0910/Tx5Ty5Tz5Fx25NFy25NFz25N.csv" 
         self.data_counter = 0
         self.data_interval = 10  
         self.last_save_time = time.time()
@@ -717,10 +718,10 @@ if __name__ == "__main__":
         while True:  # Main loop running
             time.sleep(1)
     except KeyboardInterrupt:
-        system.stop()
+        system.stop()"""
 
 # 0728 6axis no problem No visualization no filter 6 axis 
-'''class ControlSystem:
+"""class ControlSystem:
     def __init__(self):
         ip_setting =IpSetting()
         self.robot = DofController(ip_setting)
@@ -799,7 +800,8 @@ if __name__ == "__main__":
                         self.force_event.wait()
                     F_e = self.force_queue.get()
                     F_e = -F_e
-                    F_e[3:6]=0
+                    # F_e[3:6]=0
+                    # print(f"{F_e}")
                     # F_e[0]=2
                     # F_e[2]=2
                     # for i in range(6):
@@ -852,7 +854,636 @@ if __name__ == "__main__":
         # Stop the control system
         self.exit_event.set()
         self.force_thread.join()
-        self.control_thread.join()'''
+        self.control_thread.join()"""
+
+# 0903 6 axis constant force/torque no visulization write to csv, just fixed force, no daq
+"""class ControlSystem:
+    def __init__(self):
+        ip_setting =IpSetting()
+        self.robot = DofController(ip_setting)
+        self.force_sensor = ATIMini85()
+        # init control algorithm parameters
+        
+        M = np.diag([100,100,100,500,500,2000]) # [1000]*6 [1000, 2000,3000,1000,1000,1000]
+        D = np.diag([10000,100,100,500,500,2000])
+        K = np.diag([10000,100,100,500,500,2000])
+        self.M_diag = np.diagonal(M).tolist()  
+        self.D_diag = np.diagonal(D).tolist() 
+        self.K_diag = np.diagonal(K).tolist()
+        self.control_algorithm = ControlAlgorithm(M, D, K, CONTROL_CYCLE)
+
+        # share data between threads
+        self.force_queue = Queue()
+        self.position_queue = Queue()
+        # Synchronous event
+        self.force_event = threading.Event()
+        self.position_event = threading.Event()
+        self.force_thread = None
+        self.control_thread = None
+        self.exit_event = threading.Event()
+        self.is_running = False
+
+        self.last_avg = np.zeros(6)
+        # init filter
+        self.filter_window = 10
+        self.filter_buffer = np.zeros((self.filter_window,6))
+
+        # Save data
+        self.data = []
+        self.data_file_path = "data/0922/2000000-3.csv" 
+        self.data_counter = 0
+        self.data_interval = 10  
+        self.last_save_time = time.time()
+
+    def control_loop(self):
+        # Main Control Thread
+        self.robot.connect() # Connect to the platform controller
+        last_control_time = time.time()
+
+        try:
+            while not self.exit_event.is_set():
+                # Synchronous control cycle
+                current_time = time.time()
+                # if (current_time - last_control_time)>=CONTROL_CYCLE:
+                if current_time >= last_control_time:
+                    # Get current pos and force
+                    feedback = self.robot.get_feedback()
+                    current_pos = feedback.AttitudesArray
+                    # a=self.force_queue.empty()
+                    # if not self.force_event.is_set():
+                    #     self.force_event.wait()
+                    # F_e = self.force_queue.get()
+                    # F_e = -F_e
+                    # F_e = self.force_queue.get() if not self.force_queue.empty() else np.zeros(6) # Get the latest force data from the queue
+                    F_e = [20, 0, 0, 0, 0, 0] # [tx,ty,tz,fx,fy,fz]
+                    # F_e[0:4] = 0 # Test Step2: only keep the z=axis force TODO: remember to remove this line 
+                    # F_e[5] = 0
+
+                    # Excute the control algorithm
+                    target_pos = self.control_algorithm.update(F_e,current_pos)
+
+                    self.force_event.clear()
+
+                    # Send command to the platform
+                    command = CommandMessage(
+                        command_code=CommandCodes.ContinuousMoving,         # 9
+                        dofs = target_pos # dofs TODO: Control algorithm output
+                    )
+                    # command_bytes = command.to_bytes()
+                    # print(f"Command bytes: {command_bytes}")
+                    self.robot.send_command(command)
+                    # Write data to CSV
+                    self.save_data(target_pos, current_pos,F_e)
+                    last_control_time += CONTROL_CYCLE
+                    if last_control_time<current_time:
+                        last_control_time = current_time+ CONTROL_CYCLE
+                    # update the last control time
+                    # last_control_time = current_time
+                else:
+                    time.sleep(max(0, last_control_time - current_time - 0.001))
+        finally:
+            self.robot.dispose()
+            print("Control loop thread stopped!")
+    def save_data(self, target_pos, current_pos, force):
+        timestamp = time.time()
+        self.data.append({
+            "timestamp": timestamp,
+            "target_pos_rx": target_pos[0],
+            "current_pos_rx": current_pos[0],
+            "target_pos_ry": target_pos[1],
+            "current_pos_ry":current_pos[1],
+            "target_pos_rz": target_pos[2],
+            "current_pos_rz": current_pos[2],
+            "target_pos_x": target_pos[3],
+            "current_pos_x": current_pos[3],
+            "target_pos_y": target_pos[4],
+            "current_pos_y": current_pos[4],
+            "target_pos_z": target_pos[5],
+            "current_pos_z": current_pos[5],
+            "force": force,
+            "M": self.M_diag,
+            "D": self.D_diag,
+            "K": self.K_diag
+
+        })
+
+        current_time = time.time()
+        if current_time - self.last_save_time >= SAVE_DATA_CYCLE:  
+            self.export_to_csv()
+            self.last_save_time = current_time
+
+    def export_to_csv(self):
+        # Export data to CSV file
+        os.makedirs(os.path.dirname(self.data_file_path), exist_ok=True)
+        with open(self.data_file_path, 'a', newline='') as csvfile:
+            fieldnames = [
+            'timestamp', 'target_pos_rx', 'current_pos_rx', 'target_pos_ry', 'current_pos_ry',
+            'target_pos_rz', 'current_pos_rz', 'target_pos_x', 'current_pos_x',
+            'target_pos_y', 'current_pos_y', 'target_pos_z', 'current_pos_z',
+            'force', 'M', 'D', 'K'
+            ]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            if csvfile.tell() == 0:
+                writer.writeheader()
+            for row in self.data:
+                writer.writerow({
+                    # 'time': time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                    'timestamp': str(row['timestamp']),
+                    'target_pos_rx': row['target_pos_rx'],
+                    'current_pos_rx': row['current_pos_rx'],
+                    'target_pos_ry': row['target_pos_ry'],
+                    'current_pos_ry': row['current_pos_ry'],
+                    'target_pos_rz': row['target_pos_rz'],
+                    'current_pos_rz': row['current_pos_rz'],
+                    'target_pos_x': row['target_pos_x'],
+                    'current_pos_x': row['current_pos_x'],
+                    'target_pos_y': row['target_pos_y'],
+                    'current_pos_y': row['current_pos_y'],
+                    'target_pos_z': row['target_pos_z'],
+                    'current_pos_z': row['current_pos_z'],
+                    'force': row['force'],
+                    'M': row['M'],
+                    'D': row['D'],
+                    'K': row['K']
+                })
+        print(f"Data appended to {self.data_file_path}")
+        self.data = []
+
+    def start(self):
+        # Start the control system
+        self.control_thread = threading.Thread(target=self.control_loop, daemon=True)
+
+        time.sleep(0.1)
+        self.control_thread.start()
+
+    def stop(self):
+        # Stop the control system
+        self.exit_event.set()
+        self.control_thread.join()
+        self.export_to_csv()
+"""
+
+
+# 1124 6axis no save data No visualization no filter 6 axis  
+# 加入软饱和限速
+# 一开始力莫名其妙采到的数值特别小，FORCE_SAMPLE_RATE=1000改为100就好了
+class ControlSystem:
+    def __init__(self):
+        ip_setting =IpSetting()
+        self.robot = DofController(ip_setting)
+        self.force_sensor = ATIMini85()
+
+        M = np.diag([2,100,100,500,500,2]) # [1000]*6 [1000, 2000,3000,1000,1000,1000]
+        D = np.diag([2.3,100,100,500,500,16])
+        K = np.diag([10,100,100,500,500,100])
+        self.control_algorithm = ControlAlgorithm(M, D, K, CONTROL_CYCLE)
+
+        # share data between threads
+        self.force_queue = Queue()
+        self.position_queue = Queue()
+        # Synchronous event
+        self.force_event = threading.Event()
+        self.position_event = threading.Event()
+        self.force_thread = None
+        self.control_thread = None
+        self.exit_event = threading.Event()
+        self.is_running = False
+
+        self.last_avg = np.zeros(6)
+        # init filter
+        self.filter_window = 10
+        self.filter_buffer = np.zeros((self.filter_window,6))
+    
+    def force_acquisition(self):
+        # Force data acquisition thread: read data from sensor and put into queue
+        self.force_sensor.start(sampling_rate=FORCE_SAMPLE_RATE)
+        self.force_sensor.calibrate_zero()
+        try:
+            while not self.exit_event.is_set():
+                forces = self.force_sensor.get_calibrated_forces(num_samples=SAMPLE_CHUNK) # forces shape: [SAMPLE_CHUNK, 6 channels]
+                # print(f"[RAW] forces shape: {forces.shape}, sample[0]: {forces[0]}")
+                # forces[:3], forces[3:] = forces[3:], forces[:3]
+                if forces.shape[0] != SAMPLE_CHUNK or forces.shape[1] != 6:
+                    print(f"Warning: Unexpected forces shape: {forces.shape}. Expected shape: ({SAMPLE_CHUNK}, 6)")
+                else:
+                    # forces[:,:3], forces[:,3:] = forces[:,3:], forces[:,:3]
+                    tmp = forces.copy()
+                    forces[:, :3] = tmp[:, 3:]   # 新前三 = 原力矩
+                    forces[:, 3:] = tmp[:, :3]
+
+                    if not self.force_queue.full():
+                        # self.force_queue.put(averaged_forces) # forces[-1] Get the newest sample TODO: maybe use the average of the last 10 samples to avoid noise
+                        self.force_queue.put(forces[-1])
+                        self.force_event.set()
+                    else:
+                        print("Warning: Force data queue is full. Force data may be lost.")
+                time.sleep(FORCE_SAMPLE_CYCLE) # Small sleep to prevent CPU overload
+        finally:
+            self.force_sensor.stop()
+            print("Force sensor acquisition thread stopped!")
+
+    def control_loop(self):
+        # Main Control Thread
+        self.robot.connect() # Connect to the platform controller
+        last_control_time = time.time()
+        # self.initialize_csv()
+
+        try:
+            while not self.exit_event.is_set():
+                # Synchronous control cycle
+                current_time = time.time()
+                # if (current_time - last_control_time)>=CONTROL_CYCLE:
+                if current_time >= last_control_time:
+                    # Get current pos and force
+                    feedback = self.robot.get_feedback()
+                    current_pos = feedback.AttitudesArray
+                    a=self.force_queue.empty()
+                    if not self.force_event.is_set():
+                        self.force_event.wait()
+                    F_e = self.force_queue.get()
+                    F_e[1:5]=0
+                    F_e=-F_e
+                    # print(f"Fe:{F_e}")
+
+                    # Excute the control algorithm
+                    target_pos = self.control_algorithm.update(F_e,current_pos)
+
+                    self.force_event.clear()
+
+                    # Send command to the platform
+                    command = CommandMessage(
+                        command_code=CommandCodes.ContinuousMoving,         # 9
+                        dofs = target_pos # dofs TODO: Control algorithm output
+                    )
+                    # command_bytes = command.to_bytes()
+                    # print(f"Command bytes: {command_bytes}")
+                    self.robot.send_command(command)
+
+                    # self.monitor.update(target_pos,current_pos,F_e) # TODO: Maybe need to remove 6axis monitor
+                    # self.single_axis_monitor.update(target_pos[5],current_pos[5],F_e[5]) # Z-axis monitor
+                    last_control_time += CONTROL_CYCLE
+                    if last_control_time<current_time:
+                        last_control_time = current_time+ CONTROL_CYCLE
+                    # update the last control time
+                    # last_control_time = current_time
+                else:
+                    time.sleep(max(0, last_control_time - current_time - 0.001))
+        finally:
+            # if self.csv_file is not None:
+            #     self.csv_file.close()
+            self.robot.dispose()
+            print("Control loop thread stopped!")
+
+    def start(self):
+
+        self.force_thread = threading.Thread(target=self.force_acquisition, daemon=True)
+        self.control_thread = threading.Thread(target=self.control_loop, daemon=True)
+
+        self.force_thread.start()
+        time.sleep(0.1)
+        self.control_thread.start()
+
+    def stop(self):
+        # Stop the control system
+        self.exit_event.set()
+        self.force_thread.join()
+        self.control_thread.join()
+
+# 1124 6axis no save data No visualization no filter 6 axis  
+# 加入软饱和限速
+# 一开始力莫名其妙采到的数值特别小，FORCE_SAMPLE_RATE=1000改为100就好了
+"""class ControlSystem:
+    def __init__(self):
+        ip_setting =IpSetting()
+        self.robot = DofController(ip_setting)
+        self.force_sensor = ATIMini85()
+
+        M = np.diag([2,100,100,500,500,2]) # [1000]*6 [1000, 2000,3000,1000,1000,1000]
+        D = np.diag([2.3,100,100,500,500,16])
+        K = np.diag([10,100,100,500,500,100])
+        self.control_algorithm = ControlAlgorithm(M, D, K, CONTROL_CYCLE)
+
+        # share data between threads
+        self.force_queue = Queue()
+        self.position_queue = Queue()
+        # Synchronous event
+        self.force_event = threading.Event()
+        self.position_event = threading.Event()
+        self.force_thread = None
+        self.control_thread = None
+        self.exit_event = threading.Event()
+        self.is_running = False
+
+        self.last_avg = np.zeros(6)
+        # init filter
+        self.filter_window = 10
+        self.filter_buffer = np.zeros((self.filter_window,6))
+        # ---------- 软饱和参数 ---------- 
+        self.v_max   = np.array([20, np.inf, np.inf, np.inf, np.inf, 0.3])  # 平台极限速度×0.9
+        self.v_filt  = np.zeros(6)                                                   # 低通状态
+        self.alpha   = 0.15    
+    
+    def _saturate_velocity(self, v_des):
+        # 软饱和：低通+钳位，返回限速后的目标位置
+        self.v_filt += self.alpha * (v_des - self.v_filt)
+        return np.clip(self.v_filt, -self.v_max, self.v_max)
+    
+    def force_acquisition(self):
+        # Force data acquisition thread: read data from sensor and put into queue
+        self.force_sensor.start(sampling_rate=FORCE_SAMPLE_RATE)
+        self.force_sensor.calibrate_zero()
+        try:
+            while not self.exit_event.is_set():
+                forces = self.force_sensor.get_calibrated_forces(num_samples=SAMPLE_CHUNK) # forces shape: [SAMPLE_CHUNK, 6 channels]
+                # print(f"[RAW] forces shape: {forces.shape}, sample[0]: {forces[0]}")
+                # forces[:3], forces[3:] = forces[3:], forces[:3]
+                if forces.shape[0] != SAMPLE_CHUNK or forces.shape[1] != 6:
+                    print(f"Warning: Unexpected forces shape: {forces.shape}. Expected shape: ({SAMPLE_CHUNK}, 6)")
+                else:
+                    # forces[:,:3], forces[:,3:] = forces[:,3:], forces[:,:3]
+                    tmp = forces.copy()
+                    forces[:, :3] = tmp[:, 3:]   # 新前三 = 原力矩
+                    forces[:, 3:] = tmp[:, :3]
+
+                    if not self.force_queue.full():
+                        # self.force_queue.put(averaged_forces) # forces[-1] Get the newest sample TODO: maybe use the average of the last 10 samples to avoid noise
+                        self.force_queue.put(forces[-1])
+                        self.force_event.set()
+                    else:
+                        print("Warning: Force data queue is full. Force data may be lost.")
+                time.sleep(FORCE_SAMPLE_CYCLE) # Small sleep to prevent CPU overload
+        finally:
+            self.force_sensor.stop()
+            print("Force sensor acquisition thread stopped!")
+
+    def control_loop(self):
+        # Main Control Thread
+        self.robot.connect() # Connect to the platform controller
+        last_control_time = time.time()
+        # self.initialize_csv()
+
+        try:
+            while not self.exit_event.is_set():
+                # Synchronous control cycle
+                current_time = time.time()
+                # if (current_time - last_control_time)>=CONTROL_CYCLE:
+                if current_time >= last_control_time:
+                    # Get current pos and force
+                    feedback = self.robot.get_feedback()
+                    current_pos = feedback.AttitudesArray
+                    a=self.force_queue.empty()
+                    if not self.force_event.is_set():
+                        self.force_event.wait()
+                    F_e = self.force_queue.get()
+                    F_e[1:5]=0
+                    F_e=-F_e
+                    # print(f"Fe:{F_e}")
+
+                    # Excute the control algorithm
+                    target_pos = self.control_algorithm.update(F_e,current_pos)
+                    # ===== 软饱和 =====  
+                    target_pos = self._saturate_velocity(target_pos)
+
+                    self.force_event.clear()
+
+                    # Send command to the platform
+                    command = CommandMessage(
+                        command_code=CommandCodes.ContinuousMoving,         # 9
+                        dofs = target_pos # dofs TODO: Control algorithm output
+                    )
+                    # command_bytes = command.to_bytes()
+                    # print(f"Command bytes: {command_bytes}")
+                    self.robot.send_command(command)
+
+                    # self.monitor.update(target_pos,current_pos,F_e) # TODO: Maybe need to remove 6axis monitor
+                    # self.single_axis_monitor.update(target_pos[5],current_pos[5],F_e[5]) # Z-axis monitor
+                    last_control_time += CONTROL_CYCLE
+                    if last_control_time<current_time:
+                        last_control_time = current_time+ CONTROL_CYCLE
+                    # update the last control time
+                    # last_control_time = current_time
+                else:
+                    time.sleep(max(0, last_control_time - current_time - 0.001))
+        finally:
+            # if self.csv_file is not None:
+            #     self.csv_file.close()
+            self.robot.dispose()
+            print("Control loop thread stopped!")
+
+    def start(self):
+
+        self.force_thread = threading.Thread(target=self.force_acquisition, daemon=True)
+        self.control_thread = threading.Thread(target=self.control_loop, daemon=True)
+
+        self.force_thread.start()
+        time.sleep(0.1)
+        self.control_thread.start()
+
+    def stop(self):
+        # Stop the control system
+        self.exit_event.set()
+        self.force_thread.join()
+        self.control_thread.join()"""
+
+# 1124 6axis save data No visualization no filter 6 axis 
+# 加了写到csv中延迟变得巨大，需要重构代码
+"""class ControlSystem:
+    def __init__(self):
+        ip_setting =IpSetting()
+        self.robot = DofController(ip_setting)
+        self.force_sensor = ATIMini85()
+
+        M = np.diag([1,100,100,500,500,1]) # [1000]*6 [1000, 2000,3000,1000,1000,1000]
+        D = np.diag([2.5,100,100,500,500,16])
+        K = np.diag([10,100,100,500,500,100])
+        self.M_diag = np.diagonal(M).tolist()  
+        self.D_diag = np.diagonal(D).tolist() 
+        self.K_diag = np.diagonal(K).tolist()
+        self.control_algorithm = ControlAlgorithm(M, D, K, CONTROL_CYCLE)
+
+        # share data between threads
+        self.force_queue = Queue()
+        self.position_queue = Queue()
+        # Synchronous event
+        self.force_event = threading.Event()
+        self.position_event = threading.Event()
+        self.force_thread = None
+        self.control_thread = None
+        self.exit_event = threading.Event()
+        self.is_running = False
+
+        self.last_avg = np.zeros(6)
+        # init filter
+        self.filter_window = 10
+        self.filter_buffer = np.zeros((self.filter_window,6))
+        # Save data
+        self.data = []
+        self.data_file_path = "data/1124/1.csv" 
+        self.data_counter = 0
+        self.data_interval = 10  
+        self.last_save_time = time.time()
+    
+    def force_acquisition(self):
+        # Force data acquisition thread: read data from sensor and put into queue
+        self.force_sensor.start(sampling_rate=FORCE_SAMPLE_RATE)
+        self.force_sensor.calibrate_zero()
+        try:
+            while not self.exit_event.is_set():
+                forces = self.force_sensor.get_calibrated_forces(num_samples=SAMPLE_CHUNK) # forces shape: [SAMPLE_CHUNK, 6 channels]
+                # forces[:3], forces[3:] = forces[3:], forces[:3]
+                if forces.shape[0] != SAMPLE_CHUNK or forces.shape[1] != 6:
+                    print(f"Warning: Unexpected forces shape: {forces.shape}. Expected shape: ({SAMPLE_CHUNK}, 6)")
+                else:
+                    forces[:,:3], forces[:,3:] = forces[:,3:], forces[:,:3]
+
+                if not self.force_queue.full():
+                    # self.force_queue.put(averaged_forces) # forces[-1] Get the newest sample TODO: maybe use the average of the last 10 samples to avoid noise
+                    self.force_queue.put(forces[-1])
+                    self.force_event.set()
+                else:
+                    print("Warning: Force data queue is full. Force data may be lost.")
+                time.sleep(FORCE_SAMPLE_CYCLE) # Small sleep to prevent CPU overload
+        finally:
+            self.force_sensor.stop()
+            print("Force sensor acquisition thread stopped!")
+
+    def control_loop(self):
+        # Main Control Thread
+        self.robot.connect() # Connect to the platform controller
+        last_control_time = time.time()
+        # self.initialize_csv()
+
+        try:
+            while not self.exit_event.is_set():
+                # Synchronous control cycle
+                current_time = time.time()
+                # if (current_time - last_control_time)>=CONTROL_CYCLE:
+                if current_time >= last_control_time:
+                    # Get current pos and force
+                    feedback = self.robot.get_feedback()
+                    current_pos = feedback.AttitudesArray
+                    a=self.force_queue.empty()
+                    if not self.force_event.is_set():
+                        self.force_event.wait()
+                    F_e = self.force_queue.get()
+                    # print(f"{F_e[5]}")
+                    F_e = -F_e
+                    F_e[1:5] = 0
+
+                    # Excute the control algorithm
+                    target_pos = self.control_algorithm.update(F_e,current_pos)
+
+                    self.force_event.clear()
+
+                    # Send command to the platform
+                    command = CommandMessage(
+                        command_code=CommandCodes.ContinuousMoving,         # 9
+                        dofs = target_pos # dofs TODO: Control algorithm output
+                    )
+                    # command_bytes = command.to_bytes()
+                    # print(f"Command bytes: {command_bytes}")
+                    self.robot.send_command(command)
+                    # Write data to CSV
+                    self.save_data(target_pos, current_pos,F_e)
+                    last_control_time += CONTROL_CYCLE
+                    if last_control_time<current_time:
+                        last_control_time = current_time+ CONTROL_CYCLE
+
+                    # self.monitor.update(target_pos,current_pos,F_e) # TODO: Maybe need to remove 6axis monitor
+                    # self.single_axis_monitor.update(target_pos[5],current_pos[5],F_e[5]) # Z-axis monitor
+                    last_control_time += CONTROL_CYCLE
+                    if last_control_time<current_time:
+                        last_control_time = current_time+ CONTROL_CYCLE
+                    # update the last control time
+                    # last_control_time = current_time
+                else:
+                    time.sleep(max(0, last_control_time - current_time - 0.001))
+        finally:
+            # if self.csv_file is not None:
+            #     self.csv_file.close()
+            self.robot.dispose()
+            print("Control loop thread stopped!")
+    
+    def save_data(self, target_pos, current_pos, force):
+        timestamp = time.time()
+        self.data.append({
+            "timestamp": timestamp,
+            "target_pos_rx": target_pos[0],
+            "current_pos_rx": current_pos[0],
+            "target_pos_ry": target_pos[1],
+            "current_pos_ry":current_pos[1],
+            "target_pos_rz": target_pos[2],
+            "current_pos_rz": current_pos[2],
+            "target_pos_x": target_pos[3],
+            "current_pos_x": current_pos[3],
+            "target_pos_y": target_pos[4],
+            "current_pos_y": current_pos[4],
+            "target_pos_z": target_pos[5],
+            "current_pos_z": current_pos[5],
+            "force": force,
+            "M": self.M_diag,
+            "D": self.D_diag,
+            "K": self.K_diag
+
+        })
+
+        current_time = time.time()
+        if current_time - self.last_save_time >= SAVE_DATA_CYCLE:  
+            self.export_to_csv()
+            self.last_save_time = current_time
+
+    def export_to_csv(self):
+        # Export data to CSV file
+        os.makedirs(os.path.dirname(self.data_file_path), exist_ok=True)
+        with open(self.data_file_path, 'a', newline='') as csvfile:
+            fieldnames = [
+            'timestamp', 'target_pos_rx', 'current_pos_rx', 'target_pos_ry', 'current_pos_ry',
+            'target_pos_rz', 'current_pos_rz', 'target_pos_x', 'current_pos_x',
+            'target_pos_y', 'current_pos_y', 'target_pos_z', 'current_pos_z',
+            'force', 'M', 'D', 'K'
+            ]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            if csvfile.tell() == 0:
+                writer.writeheader()
+            for row in self.data:
+                writer.writerow({
+                    # 'time': time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                    'timestamp': str(row['timestamp']),
+                    'target_pos_rx': row['target_pos_rx'],
+                    'current_pos_rx': row['current_pos_rx'],
+                    'target_pos_ry': row['target_pos_ry'],
+                    'current_pos_ry': row['current_pos_ry'],
+                    'target_pos_rz': row['target_pos_rz'],
+                    'current_pos_rz': row['current_pos_rz'],
+                    'target_pos_x': row['target_pos_x'],
+                    'current_pos_x': row['current_pos_x'],
+                    'target_pos_y': row['target_pos_y'],
+                    'current_pos_y': row['current_pos_y'],
+                    'target_pos_z': row['target_pos_z'],
+                    'current_pos_z': row['current_pos_z'],
+                    'force': row['force'],
+                    'M': row['M'],
+                    'D': row['D'],
+                    'K': row['K']
+                })
+        # print(f"Data appended to {self.data_file_path}")
+        self.data = []
+
+    def start(self):
+
+        self.force_thread = threading.Thread(target=self.force_acquisition, daemon=True)
+        self.control_thread = threading.Thread(target=self.control_loop, daemon=True)
+
+        self.force_thread.start()
+        time.sleep(0.1)
+        self.control_thread.start()
+
+    def stop(self):
+        # Stop the control system
+        self.exit_event.set()
+        self.force_thread.join()
+        self.control_thread.join()
+        self.export_to_csv()"""
 
 if __name__ == "__main__":
     # app = QtWidgets.QApplication(sys.argv)

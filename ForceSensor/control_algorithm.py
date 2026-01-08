@@ -1,204 +1,130 @@
 import numpy as np
-from scipy.linalg import inv
+from scipy.linalg import solve
 from scipy.spatial.transform import Rotation as R
+import matplotlib.pyplot as plt
 
-# [Tx,Ty,Tz,Fx,Fy,Fz] 下位机是先欧拉角后位置
-SAFETY_LIMITS = {
-    'force': [50,50,50,1000,10,10],
-    'position': [0.3,0.3,0.3,0.1,0.1,0.1]
-}
+
+SAFETY_POSISTION = np.array([10, 10, 10, 150/1000, 150/1000, 150/1000])
+
+def _wrap_angle_rad(a):
+    return (a + np.pi) % (2*np.pi) - np.pi
 
 class ControlAlgorithm:
     def __init__(self, M, D, K, dt=0.01):
-        self.M = np.array(M)  
-        self.D = np.array(D)  
-        self.K = np.array(K)  
-        self.dt = dt          
-
-        # init state variables
-        # self.x_e = np.zeros(6)     
-        # self.x_e_dot = np.zeros(6) 
-        # self.x_e_ddot = np.zeros(6)
+        self.M = np.array(M, dtype=float)
+        self.D = np.array(D, dtype=float)
+        self.K = np.array(K, dtype=float)
+        self.dt = dt
         self.reset()
-        
-        # init desired variables
-        
-    
-    def reset(self,initial_x_d=None):
-        # TODO: x_d reset as the actual pos before add force
-        self.x_d = np.zeros(6)     
-        self.x_d_dot = np.zeros(6) 
-        self.x_d_ddot = np.zeros(6)
 
-        self.x_e = np.zeros(6, dtype=np.float64)
-        self.x_e_dot = np.zeros(6, dtype=np.float64)
-        self.x_e_ddot = np.zeros(6, dtype=np.float64)
-        # self.R_e = np.eye(3, dtype=np.float64)  # Rotation matrix, identity for now
-        self.R_e = R.identity().as_matrix()  # 偏差旋转矩阵
-        self.R_d = R.identity().as_matrix()  # 期望旋转矩阵
+    def reset(self, initial_x_d=None):
+        # 内部约定：self.x_d 的前3位（角）以弧度存储；后3位是位置（米）
+        self.x_d = np.zeros(6, dtype=float)
+        self.x_d_dot = np.zeros(6, dtype=float)
+        self.x_d_ddot = np.zeros(6, dtype=float)
+
+        self.x_e = np.zeros(6, dtype=float)        # error: [rot(rad); pos(m)]
+        self.x_e_dot = np.zeros(6, dtype=float)    # rates: [rot_dot(rad/s); pos_dot(m/s)]
+        self.x_e_ddot = np.zeros(6, dtype=float)
+
+        self.R_e = np.eye(3)   # current deviation rotation matrix
+        self.R_d = np.eye(3)   # desired rotation matrix
+
         if initial_x_d is not None:
             self.set_desired_trajectory(initial_x_d)
 
-        self.current_rot = np.eye(3)
-    
+    def set_desired_trajectory(self, x_d, x_d_dot=None, x_d_ddot=None, deg_input=True):
+        # x_d: [rx,ry,rz, x,y,z] 角度可用度输入（deg_input=True）
+        arr = np.array(x_d, dtype=float)
+        if deg_input:
+            arr[:3] = np.deg2rad(arr[:3])   # convert to radians for internal use
+        self.x_d = arr
+        self.R_d = R.from_euler('xyz', self.x_d[:3], degrees=False).as_matrix()
+        if x_d_dot is not None:
+            self.x_d_dot = np.array(x_d_dot, dtype=float)
+        if x_d_ddot is not None:
+            self.x_d_ddot = np.array(x_d_ddot, dtype=float)
+
     def _transform_force_to_world(self, F_sensor, current_pose):
-        """
-        将传感器数据转换到世界坐标系
-        Args:
-            F_sensor: [T_x, T_y, T_z, F_x, F_y, F_z]（传感器坐标系）
-            current_pose: [rx, ry, rz, x, y, z ]（世界坐标系，姿态为旋转向量）欧拉角的形式
-        Returns:
-            F_world: 世界坐标系下的六维力
-        """
-        # 获取当前旋转矩阵
-        # rot = R.from_rotvec(current_pose[:3]).as_matrix()
+        # unchanged from your code (ensure order matches x_e ordering: [torque, force])
         rot = R.from_euler('xyz', current_pose[:3], degrees=True).as_matrix()
-        # print("DEBUG: rot=",rot)
-        
-        # 转换力和力矩 before input this function Fe:[tx,ty,tz,fx,fy,fz]
         force_sensor = F_sensor[3:]
-        # print("force_sensor:",force_sensor)
         torque_sensor = F_sensor[:3]
-        # print("DEBUG torque_sensor:",torque_sensor)
-        
-        # 力向量转换：F_world = R * F_sensor
         force_world = rot @ force_sensor
-        
-        # 力矩转换：T_world = R @ T_sensor + position @ F_sensor
-        # （假设传感器位于末端，忽略位置偏移的影响）
         torque_world = rot @ torque_sensor
+        return np.concatenate([torque_world, force_world])
 
-        F_world = np.concatenate([torque_world,force_world])
-
-        
-        return F_world
-    
     def update(self, F_sensor, current_pose=None):
-        """
-        update control variables
-        Args: 
-            F_sensor: get from force sensor
-            current_pose: [rx, ry, rz, x, y, z]欧拉 (optional) current pose of the end effector in world coordinates
-        return:
-            target_pos: next loop target position 
-        OR TODO: input x here and update it in the main.py
-        """
-        # self._update_trajectory()
-        
+        # 1) ensure self.x_e[:3] contains the current orientation error (rad) BEFORE computing accelerations
+        cur_euler = R.from_matrix(self.R_e).as_euler('xyz', degrees=False)  # rad
+        rot_err = cur_euler - self.x_d[:3]
+        rot_err = _wrap_angle_rad(rot_err)
+        self.x_e[:3] = rot_err  # now K @ x_e will include rotational stiffness (in radians)
 
-        # self.current_rot = R.from_rotvec(current_pose[:3]).as_matrix()
-        self.current_rot = R.from_euler('xyz', current_pose[:3], degrees=True).as_matrix()
-        F_world = self._transform_force_to_world(F_sensor, current_pose) # return force in world coordinates
-        # print("F_world:", F_world)
-        # print("F_sensor:",F_sensor)
-        # print(F_world==F_sensor)
-        # print("current_pose:",current_pose)
+        # 2) force transform and safety clipping (as you had)
+        F_world = self._transform_force_to_world(F_sensor, current_pose)
+        # ...clip F_world if needed...
 
-        # Safety check
-        for i in range(6):
-            F_world[i] = np.clip(F_world[i], -SAFETY_LIMITS['force'][i], SAFETY_LIMITS['force'][i])
+        # 3) compute accelerations (use solve instead of inv)
+        rhs = F_world - (self.D @ self.x_e_dot) - (self.K @ self.x_e)
+        self.x_e_ddot = solve(self.M, rhs)
 
-        self.x_e_ddot = inv(self.M) @ (F_world - self.D @ self.x_e_dot - self.K @ self.x_e)
-        a=self.x_e_ddot
+        # 4) integrate velocities
         self.x_e_dot += self.x_e_ddot * self.dt
-        b=self.x_e_dot
-        # Update position
+
+        # 5) integrate position (translational part)
         self.x_e[3:] += self.x_e_dot[3:] * self.dt
-        c=self.x_e[3:]
-        # Update orientation
-        # delta_R = R.from_rotvec(self.x_e_dot[3:]) 
-        # print("R_e:",self.R_e)
-        delta_euler = self.x_e_dot[:3] * self.dt
-        delta_R = R.from_euler('xyz', delta_euler, degrees=True).as_matrix()
-        # print("Delta_R:",delta_R)
+
+        # 6) integrate rotation via small-angle Rodrigues using omega in rad/s
+        omega = self.x_e_dot[:3]   # now already rad/s
+        omega_skew = np.array([
+            [0, -omega[2], omega[1]],
+            [omega[2], 0, -omega[0]],
+            [-omega[1], omega[0], 0]
+        ])
+        delta_R = np.eye(3) + omega_skew * self.dt + 0.5 * (omega_skew @ omega_skew) * (self.dt**2)
         self.R_e = delta_R @ self.R_e
-        d=self.R_e
-        # print("self.R_e:", self.R_e)
-        # print(self.R_e==delta_R)
-        # self.x_e[3:] = R.from_matrix(self.R_e).as_rotvec()
 
-        # calculate the target position
-        target_pos = self._calculate_target_position(self.x_e, self.x_d )
-        # target_pos = np.zeros(6)
-        # target_pos[:3] = self.x_d[:3] + self.x_e[:3]
-        # # orientation part
-        # target_R = self.R_d @ self.R_e
-        # target_pos[3:] = R.from_matrix(target_R).as_rotvec()
+        # 7) update orientation error after rotation integration (for next iteration)
+        new_euler = R.from_matrix(self.R_e).as_euler('xyz', degrees=False)
+        new_rot_err = _wrap_angle_rad(new_euler - self.x_d[:3])
+        self.x_e[:3] = new_rot_err
 
-        # Clip position for safety
-        # target_pos = np.clip(target_pos, -SAFETY_LIMITS['position'], SAFETY_LIMITS['position'])
+        # 8) prepare target_pos to send out (we return angles in degrees if you need that)
+        target_pos = np.zeros(6, dtype=float)
+        target_pos[:3] = np.rad2deg(new_euler)   # degrees for external systems if they expect deg
+        target_pos[3:] = self.x_d[3:] + self.x_e[3:]
+        safe_limit = SAFETY_POSISTION  # ±deg, ±mm
+        target_pos = np.clip(target_pos, -safe_limit, safe_limit)
         return target_pos
-    
-    def _calculate_target_position(self, x_e, x_d):
-        """
-        Calculate the target position based on the current error and desired position
-        Args:
-            x_e: current error state
-            x_d: desired state
-        Returns:
-            target_pos: calculated target position
-        """
-        target_pos = np.zeros(6)
-        target_pos[3:] = x_d[3:] + x_e[3:]
-        # orientation part
-        target_R = self.R_d @ self.R_e
-        target_pos[:3] = R.from_matrix(target_R).as_euler('xyz', degrees=True)
-        return target_pos
-
-    def set_desired_trajectory(self, x_d, x_d_dot=None, x_d_ddot=None):
-        """
-        update the desired trajectory
-        now is static trajectory, but can be changed to dynamic trajectory in the future
-        Args:
-
-        """
-
-        self.x_d = np.array(x_d)
-        self.R_d = R.from_euler('xyz', self.x_d[:3], degrees=True).as_matrix()  # Desired rotation matrix from desired rotation vector
-        self.x_d_dot = np.array(x_d_dot) if x_d_dot is not None else np.zeros_like(x_d)
-        self.x_d_ddot = np.array(x_d_ddot) if x_d_ddot is not None else np.zeros_like(x_d)
-
-# TODO next step: add dynamic trajectory
-    """
-    def set_static_position(self, x_d):
-        self.traj_type = "static"
-        self.x_d = np.array(x_d, dtype=np.float64)
-
-    def set_sine_trajectory(self,axis,amplitude, frequency):
-        self.traj_type = "sine"
-        self.traj_data = (int(axis), float(amplitude), float(frequency))
-        self.traj_time = 0.0
-
-    def set_csv_trajectory(self, csv_file):
-        self.traj_type = "csv"
-        self.traj_data = np.loadtxt(csv_file,delimiter=",")
-        self.traj_time = 0.0
-
-    def _update_trajectory(self):
-        if self.traj_type == "sine":
-            axis, amplitude, frequency = self.traj_data
-            t = self.traj_time
-            self.x_d[axis] = amplitude * np.sin(2 * np.pi * frequency * t)
-            self.traj_time += self.dt
-        elif self.traj_type == "csv":
-            if self.traj_time < len(self.traj_data):
-                self.x_d = self.traj_data[int(self.traj_time)]
-                self.traj_time += 1
-    """        
-
 #test
 # 示例使用
-# M = np.eye(6)  # 示例质量矩阵
-# D = np.eye(6)  # 示例阻尼矩阵
-# K = np.eye(6)  # 示例刚度矩阵
+# M = np.diag([1,1,1,1,1,1])  # 示例质量矩阵
+# D = np.diag([20, 10, 10, 5, 5, 5])  # 示例阻尼矩阵
+# K = np.diag([100, 100, 100, 50, 50, 50])  # 示例刚度矩阵
 
 # control = ControlAlgorithm(M, D, K)
 # control.set_desired_trajectory([0,0,0,0,0,0])
 # # 示例力输入
-# F_e = np.array([0, 1, 0, 10, 0, 0])
+# F_e = np.array([10, 50, 100, 10, 10, 10])
 # target_pos = [0,0,0,0,0,0]
-# for i in range(100):
+# Traj=[]
+# for i in range(400):
 #     target_pos = control.update(F_e, target_pos)
-#     print("目标位置:", [f"{val:.6f}" for val in target_pos])
+#     # print("目标位置:", [f"{val:.6f}" for val in target_pos])
+#     Traj.append(target_pos.copy())
 
+# trajectory = np.array(Traj)
 
+# plt.figure(figsize=(7, 4))
+# time = np.arange(trajectory.shape[0])
+
+# for i in range(0,6):
+#     plt.plot(time, trajectory[:, i], label=f'Axis {i+1}')
+
+# plt.xlabel('Time step')
+# plt.ylabel('Position')
+# plt.title('Target position — all 6 axes')
+# plt.legend()
+# plt.tight_layout()
+# plt.show()
