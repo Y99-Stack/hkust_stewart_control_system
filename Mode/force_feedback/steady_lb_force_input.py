@@ -5,10 +5,12 @@ from Mode.force_feedback._force_feedback_core import run_force_feedback_mode
 
 
 def _lb_force_transform(force: np.ndarray) -> np.ndarray:
+    # Keep LB mode behavior consistent with existing convention (sign inversion only).
     return -np.asarray(force, dtype=float)
 
 
 def _parse_vector6(raw_text: str, name: str) -> np.ndarray:
+    # Accept either Python-list style input or comma-separated text from terminal input.
     text = raw_text.strip()
     if not text:
         raise ValueError(f"{name} cannot be empty.")
@@ -27,6 +29,7 @@ def _parse_vector6(raw_text: str, name: str) -> np.ndarray:
 
 
 def _parse_diag_input(raw_text: str, default_value: np.ndarray) -> np.ndarray:
+    # Empty input means "use default" for that diagonal.
     text = raw_text.strip()
     if not text:
         return default_value.copy()
@@ -39,6 +42,7 @@ def _parse_diag_input(raw_text: str, default_value: np.ndarray) -> np.ndarray:
         arr = np.asarray([float(p) for p in parts], dtype=float)
 
     if arr.ndim == 0:
+        # Scalar input is broadcast to all axes.
         return np.full(6, float(arr), dtype=float)
 
     arr = arr.reshape(-1)
@@ -57,6 +61,7 @@ def run_mode(
     **kwargs,
 ) -> None:
     if fixed_force is None:
+        # LB mode always needs an explicit fixed target force vector.
         raise ValueError("steady_lb_force_input requires fixed_force with 6-axis values.")
 
     run_force_feedback_mode(
@@ -81,6 +86,7 @@ if __name__ == "__main__":
     keep_default = use_defaults in ("", "y", "yes")
 
     if keep_default:
+        # Default path keeps previous tuning unchanged.
         m_diag = default_m
         d_diag = default_d
         k_diag = default_k
@@ -104,6 +110,8 @@ if __name__ == "__main__":
         )
 
     sensor_flag = input("Connect force sensor first? [y/N]: ").strip().lower()
+    # In LB mode this only controls whether hardware is connected/read first.
+    # The controller input still uses fixed_force when provided.
     use_force_sensor = sensor_flag in ("y", "yes")
 
     fixed_force = _parse_vector6(

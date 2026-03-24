@@ -6,10 +6,10 @@ from enum import IntEnum
 #@dataclass
 # class CommandMessage:
 #      id: int = 55
-#      # 状态指令
+#      # State command
 #      command_code: int = 0  
-#      # 子状态指令  
-#      # 1 表示单步运行；2表示动态运行；3 表示脚本运行
+#      # Sub-state command
+#      # 1=step mode; 2=dynamic mode; 3=script mode
 #      sub_command_code: int = 0 
      
 class CommandCodes(IntEnum):
@@ -35,14 +35,14 @@ class SubCommandCodes(IntEnum):
     SineWave = 2
     SlowStop = 3
     # Script = 3,
-    Freeze = 4 # 冻结
-    Thaw = 5 # 解冻
+    Freeze = 4 # Freeze command.
+    Thaw = 5 # Thaw command.
     Reset = 6
     ComplexMove = 7
-    ComplexMoveStop = 8 # 复合运动-停止
+    ComplexMoveStop = 8 # Stop composite motion.
     SquareWave = 9
     WhiteNoise = 10
-    FatigueTest = 11 # 疲劳测试
+    FatigueTest = 11 # Fatigue-test mode.
 
 class CommandMessage:
     def __init__(self,
@@ -67,7 +67,7 @@ class CommandMessage:
         self.SubCommandCode = sub_command_code
         self.ScriptFileIndex = script_file_index
         self.DO = do
-        self.CyChoose = cy_choose # 6个运动杠选择
+        self.CyChoose = cy_choose # Selection mask for 6 actuators.
         self.JogSpeed = jog_speed
         self.DOFs = dofs if dofs is not None else [0.0] * 6
         self.AmplitudeArray = amplitude_array if amplitude_array is not None else [0.0] * 6
@@ -100,7 +100,7 @@ class CommandMessage:
             self.Timestamp
             ]
 
-            # 打包格式字符串
+            # Build the struct packing format string.
             format_string = '<B'  # Id (1 byte)
             format_string += 'B'  # CommandCode (1 byte)
             format_string += 'B'  # SubCommandCode (1 byte)
@@ -155,7 +155,7 @@ class CommandMessage:
 # command_bytes = command.to_bytes()
 # print(f"Command bytes: {command_bytes}")
 # def test_command_message_default_values():
-#     """测试 CommandMessage 的默认值"""
+#     """Test default values of CommandMessage."""
 #     command = CommandMessage()
 #     assert command.id == 55
 #     assert command.command_code == 0
@@ -175,10 +175,10 @@ class CommandMessage:
 #     assert command.timestamp == 0
 
 # def test_command_message_to_bytes():
-#     """测试 CommandMessage 转换为字节数组"""
+#     """Test CommandMessage serialization to bytes."""
 #     command = CommandMessage(
 #         command_code=1,
 #         dofs=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
 #     )
 #     command_bytes = command.to_bytes()
-#     assert len(command_bytes) > 0  # 确保字节数组非空
+#     assert len(command_bytes) > 0  # Ensure byte array is not empty.

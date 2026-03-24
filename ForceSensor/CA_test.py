@@ -16,7 +16,7 @@ class ControlAlgorithm:
         self.reset()
 
     def reset(self, initial_x_d=None):
-        # 内部约定：self.x_d 的前3位（角）以弧度存储；后3位是位置（米）
+        # Internal convention: first 3 entries are angles in radians; last 3 are position.
         self.x_d = np.zeros(6, dtype=float)
         self.x_d_dot = np.zeros(6, dtype=float)
         self.x_d_ddot = np.zeros(6, dtype=float)
@@ -32,7 +32,7 @@ class ControlAlgorithm:
             self.set_desired_trajectory(initial_x_d)
 
     def set_desired_trajectory(self, x_d, x_d_dot=None, x_d_ddot=None, deg_input=True):
-        # x_d: [rx,ry,rz, x,y,z] 角度可用度输入（deg_input=True）
+        # x_d: [rx, ry, rz, x, y, z], with optional degree input for rotation.
         arr = np.array(x_d, dtype=float)
         if deg_input:
             arr[:3] = np.deg2rad(arr[:3])   # convert to radians for internal use
@@ -94,20 +94,20 @@ class ControlAlgorithm:
         target_pos[3:] = self.x_d[3:] + self.x_e[3:]
         return target_pos
 #test
-# 示例使用
-M = np.diag([1,1,1,1,1,1])  # 示例质量矩阵
-D = np.diag([20, 10, 10, 5, 5, 5])  # 示例阻尼矩阵
-K = np.diag([100, 100, 100, 50, 50, 50])  # 示例刚度矩阵
+# Example usage
+M = np.diag([1,1,1,1,1,1])  # Example mass matrix
+D = np.diag([20, 10, 10, 5, 5, 5])  # Example damping matrix
+K = np.diag([100, 100, 100, 50, 50, 50])  # Example stiffness matrix
 
 control = ControlAlgorithm(M, D, K)
 control.set_desired_trajectory([0,0,0,0,0,0])
-# 示例力输入
+# Example force input
 F_e = np.array([10, 50, 100, 10, 10, 10])
 target_pos = [0,0,0,0,0,0]
 Traj=[]
 for i in range(400):
     target_pos = control.update(F_e, target_pos)
-    # print("目标位置:", [f"{val:.6f}" for val in target_pos])
+    # print("Target pose:", [f"{val:.6f}" for val in target_pos])
     Traj.append(target_pos.copy())
 
 trajectory = np.array(Traj)

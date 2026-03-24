@@ -11,8 +11,8 @@ class DofController:
 #     def __init__(self):
 #         self._socket_lock = threading.Lock()
 #         self._socket: Optional[socket.socket] = None
-#         self._local_endpoint = ("192.168.0.131", 10000)  # 上位机 IP 和端口
-#         self._remote_endpoint = ("192.168.0.125", 5000)  # 下位机 IP 和端口
+#         self._local_endpoint = ("192.168.0.131", 10000)  # Host PC IP and port
+#         self._remote_endpoint = ("192.168.0.125", 5000)  # Embedded controller IP and port
 
 #         self.is_connect_disabled = False
 #         self.is_auto_connect_enabled = True
@@ -28,93 +28,93 @@ class DofController:
 #         self._feedback_thread.start()
 
 #     def start_connecting(self):
-#         """启动连接过程"""
+#         """Start the connection process."""
 #         if self.is_connect_disabled:
-#             print("连接已手动关闭，无法启动连接")
+#             print("Connection was manually disabled and cannot be started")
 #             return
 
 #         self.is_connected = False
 #         self.is_connecting = True
-#         self.connect_message = "正在连接"
+#         self.connect_message = "Connecting"
 #         print(self.connect_message)
 
 #     def connect(self):
-#         """尝试连接到下位机"""
+#         """Try connecting to embedded controller."""
 #         with self._socket_lock:
 #             if self._socket:
 #                 self._socket.close()
-#                 print("关闭现有连接")
+#                 print("Close existing connection")
 
 #             self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 #             try:
 #                 self._socket.bind(self._local_endpoint)
-#                 self._socket.settimeout(0.5)  # 设置超时时间
+#                 self._socket.settimeout(0.5)  # Set socket timeout.
 #                 self.is_connected = True
-#                 self.connect_message = "连接成功"
+#                 self.connect_message = "Connection established"
 #                 print(self.connect_message)
 #             except Exception as e:
 #                 self.is_connected = False
-#                 self.connect_message = f"连接失败: {e}"
+#                 self.connect_message = f"Connection failed: {e}"
 #                 print(self.connect_message)
 
 #     def send_command_message(self, command_message: bytes):
-#         """发送命令消息"""
+#         """Send command message."""
 #         if not self.is_connected:
-#             print("未连接到下位机，无法发送命令")
+#             print("Not connected to embedded controller; cannot send command")
 #             return
 
 #         with self._socket_lock:
 #             try:
 #                 self._socket.sendto(command_message, self._remote_endpoint)
-#                 print("命令已发送")
+#                 print("Command sent")
 #             except Exception as e:
-#                 print(f"发送命令失败: {e}")
+#                 print(f"Failed to send command: {e}")
 
 #     def _get_feedback_message(self):
-#         """接收反馈消息"""
+#         """Receive feedback message."""
 #         while True:
 #             try:
 #                 if not self.is_connected and not self.is_auto_connect_enabled or self.is_connect_disabled:
-#                     print("未连接且未启用自动连接，等待重新连接...")
+#                     print("Not connected and auto-reconnect disabled, waiting...")
 #                     time.sleep(1)
 #                     continue
 
 #                 if not self.is_connected:
-#                     print("尝试重新连接...")
+#                     print("Trying to reconnect...")
 #                     self.connect()
 
-#                 data, _ = self._socket.recvfrom(200)  # 接收数据
-#                 if data[0] != 55:  # 检查数据包标识
-#                     raise ValueError("无效的数据包")
+#                 data, _ = self._socket.recvfrom(200)  # Receive data.
+#                 if data[0] != 55:  # Check packet identifier.
+#                     raise ValueError("Invalid packet")
 
-#                 # 处理反馈消息
+#                 # Process feedback message.
 #                 feedback_message = FeedbackMessage.from_bytes(data)
 #                 self.is_connected = True
-#                 print(f"收到反馈: {feedback_message}")
-#                 self._no_feedback_time = 0  # 重置未收到反馈的时间
+#                 print(f"Received feedback: {feedback_message}")
+#                 self._no_feedback_time = 0  # Reset no-feedback timer.
 
 #             except socket.timeout:
-#                 print("连接超时，未收到下位机反馈")
+#                 print("Connection timed out: no feedback from embedded controller")
 #                 self._no_feedback_time += 500
 #                 if self._no_feedback_time >= 500:
 #                     self.is_connected = False
-#                     self.connect_message = "连接断开"
+#                     self.connect_message = "Disconnected"
 #                     print(self.connect_message)
 
 #             except Exception as e:
-#                 print(f"接收反馈消息出错: {e}")
+#                 print(f"Error while receiving feedback: {e}")
 #                 self.is_connected = False
-#                 self.connect_message = "连接断开"
+#                 self.connect_message = "Disconnected"
 #             time.sleep(1)
 
 
 #     def _check_connection(self):
-#         """检测连接是否断开"""
+#         """Check whether connection is broken."""
         
 #         self._no_feedback_time += 100
 
 #         if self._no_feedback_time >= 500 and self.is_connected:
-#             print("通信超时,判定断线")
+#             print("Communication timeout, treated as disconnected")
 #             self.is_connected = False
 
 #         self._connection_broken_timer = threading.Timer(0.1, self._check_connection)
@@ -122,7 +122,7 @@ class DofController:
 
 
 #     def dispose(self):
-#         """释放资源"""
+#         """Release resources."""
 #         with self._socket_lock:
 #             if self._socket:
 #                 self._socket.close()
@@ -131,7 +131,7 @@ class DofController:
 #             self.is_connecting = False
 #             self.is_connect_disabled = True
 #             self.is_auto_connect_enabled = False
-#             print("资源已释放")
+#             print("Resources released")
 
 #     @property
 #     def is_connected(self):
@@ -140,7 +140,7 @@ class DofController:
 #     @is_connected.setter
 #     def is_connected(self, value):
 #         self._is_connected = value
-#         print(f"连接状态: {value}")
+#         print(f"Connection state: {value}")
    
     def __init__(self, ip_setting: IpSetting):
         self._socket_lock = threading.Lock()
@@ -155,31 +155,31 @@ class DofController:
             self._socket.bind((self.ip_settings.local_ip, self.ip_settings.local_port))
             self._socket.settimeout(0.5)
             self._is_connected = True
-            print(f"连接成功: 本地 {self.ip_settings.local_ip}:{self.ip_settings.local_port} -> 远程 {self.ip_settings.remote_ip}:{self.ip_settings.remote_port}")
+            print(f"Connection established: local {self.ip_settings.local_ip}:{self.ip_settings.local_port} -> remote {self.ip_settings.remote_ip}:{self.ip_settings.remote_port}")
         except Exception as e:
             self._is_connected = False
-            print(f"连接失败: {e}")
+            print(f"Connection failed: {e}")
 
     def disconnect(self):
-        """断开连接"""
+        """Disconnect socket."""
         if self._is_connected:
             self._socket.close()
             self._is_connected = False
-            print("连接已断开")
+            print("Disconnected")
 
     def send_command(self, command_message: CommandMessage):
         if not self._is_connected:
-            print("未连接到下位机，请检查 IP 和端口设置")
+            print("Not connected to embedded controller. Check IP and port settings")
             return
 
         try:
             command_bytes = command_message.to_bytes()
             if not command_bytes:
-                print("命令数据打包失败")
+                print("Failed to pack command data")
                 return
             self._socket.sendto(command_bytes, (self.ip_settings.remote_ip, self.ip_settings.remote_port))
-            # print(f"命令已发送")
-            # 打印每个参数的值
+            # print(f"Command sent")
+            # Print each argument value for debugging.
             # print(f"Id: {command_message.Id}")
             # print(f"CommandCode: {command_message.CommandCode.value}")
             # print(f"SubCommandCode: {command_message.SubCommandCode.value}")
@@ -197,44 +197,44 @@ class DofController:
             # print(f"Axyz: {command_message.Axyz}")
             # print(f"Timestamp: {command_message.Timestamp}")
         except Exception as e:
-            print(f"发送命令失败: {e}")
+            print(f"Failed to send command: {e}")
 
     # def _receive_feedback(self):
-    #     """接收反馈消息"""
+    #     """Receive feedback messages."""
     #     while True:
     #         try:
     #             data, _ = self._socket.recvfrom(200)
     #             feedback = FeedbackMessage.from_bytes(data)
     #             self._is_connected = True
-    #             print(f"接收到的数据大小: {len(data)} 字节")
-    #             print(f"收到反馈: {feedback}")
+    #             print(f"Received data size: {len(data)} bytes")
+    #             print(f"Received feedback: {feedback}")
     #         except socket.timeout:
     #             #self._is_connected = False
-    #             print("连接超时，未收到下位机反馈")
+    #             print("Connection timed out: no feedback from embedded controller")
     #         except Exception as e:
-    #             print(f"接收反馈出错: {e}")
+    #             print(f"Error receiving feedback: {e}")
     #             #self._is_connected = False
     #         time.sleep(10) # 10s update
     def get_feedback(self):
-        """按需接收反馈消息"""
+        """Receive one feedback packet on demand."""
         try:
             data, _ = self._socket.recvfrom(200)
             feedback = FeedbackMessage.from_bytes(data)
             self._is_connected = True
-            # print(f"接收到的数据大小: {len(data)} 字节")
-            #print(f"收到反馈: {feedback}")
-            # print(f"收到的dofs:{feedback.AttitudesArray}")
+            # print(f"Received data size: {len(data)} bytes")
+            #print(f"Received feedback: {feedback}")
+            # print(f"Received DOFs: {feedback.AttitudesArray}")
             return feedback
         except socket.timeout:
-            print("连接超时，未收到下位机反馈")
+            print("Connection timed out: no feedback from embedded controller")
             return None
         except Exception as e:
-            print(f"接收反馈消息出错: {e}")
+            print(f"Error while receiving feedback: {e}")
             self._is_connected = False
             return None
 
     def dispose(self):
-        """释放资源"""
+        """Release socket and internal connection flags."""
         
         with self._socket_lock:
             if self._socket:
@@ -243,4 +243,4 @@ class DofController:
             self.is_connecting = False
             self.is_connect_disabled = True
             self.is_auto_connect_enabled = False
-            print("资源已释放")
+            print("Resources released")

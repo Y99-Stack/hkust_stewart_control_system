@@ -4,6 +4,12 @@ from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 
 
+# Safety clamp for commanded platform pose.
+# Axis order in this file is [Rx, Ry, Rz, X, Y, Z].
+# Units are:
+# - Rx, Ry, Rz in degree
+# - X, Y, Z in mm
+# The controller output is clipped to +/- this vector before being sent.
 # SAFETY_POSISTION = np.array([10, 10, 10, 150/1000, 150/1000, 150/1000])
 SAFETY_POSISTION = np.array([10, 10, 10, 150, 150, 150])
 def _wrap_angle_rad(a):
@@ -11,6 +17,8 @@ def _wrap_angle_rad(a):
 
 class ControlAlgorithm:
     def __init__(self, M, D, K, dt=0.01):
+        # M, D, K are 6x6 impedance matrices in controller coordinates.
+        # dt is control period in seconds.
         self.M = np.array(M, dtype=float)
         self.D = np.array(D, dtype=float)
         self.K = np.array(K, dtype=float)
@@ -18,7 +26,9 @@ class ControlAlgorithm:
         self.reset()
 
     def reset(self, initial_x_d=None):
-        # 内部约定：self.x_d 的前3位（角）以弧度存储；后3位是位置（米）
+        # Internal state convention:
+        # - first 3 entries are orientation (rad)
+        # - last 3 entries are translation (same position unit as command pipeline)
         self.x_d = np.zeros(6, dtype=float)
         self.x_d_dot = np.zeros(6, dtype=float)
         self.x_d_ddot = np.zeros(6, dtype=float)
@@ -34,7 +44,8 @@ class ControlAlgorithm:
             self.set_desired_trajectory(initial_x_d)
 
     def set_desired_trajectory(self, x_d, x_d_dot=None, x_d_ddot=None, deg_input=True):
-        # x_d: [rx,ry,rz, x,y,z] 角度可用度输入（deg_input=True）
+        # x_d format is [rx, ry, rz, x, y, z].
+        # If deg_input=True, rotational components are interpreted as degrees.
         arr = np.array(x_d, dtype=float)
         if deg_input:
             arr[:3] = np.deg2rad(arr[:3])   # convert to radians for internal use
@@ -94,24 +105,24 @@ class ControlAlgorithm:
         target_pos = np.zeros(6, dtype=float)
         target_pos[:3] = np.rad2deg(new_euler)   # degrees for external systems if they expect deg
         target_pos[3:] = self.x_d[3:] + self.x_e[3:]
-        safe_limit = SAFETY_POSISTION  # ±deg, ±mm
+        safe_limit = SAFETY_POSISTION  # Clamp bounds: +/- degree for rotation, +/- mm for translation.
         target_pos = np.clip(target_pos, -safe_limit, safe_limit)
         return target_pos
 #test
 
-# M = np.diag([1,1,1,1,1,1])  # 示例质量矩阵
-# D = np.diag([20, 10, 10, 5, 5, 5])  # 示例阻尼矩阵
-# K = np.diag([100, 100, 100, 50, 50, 50])  # 示例刚度矩阵
+    # M = np.diag([1,1,1,1,1,1])  # Example mass matrix
+    # D = np.diag([20, 10, 10, 5, 5, 5])  # Example damping matrix
+    # K = np.diag([100, 100, 100, 50, 50, 50])  # Example stiffness matrix
 
 # control = ControlAlgorithm(M, D, K)
 # control.set_desired_trajectory([0,0,0,0,0,0])
-# # 示例力输入
+# # Example force input
 # F_e = np.array([10, 0, 0, 0, 0, 1000])
 # target_pos = [0,0,0,0,0,0]
 # Traj=[]
 # for i in range(400):
 #     target_pos = control.update(F_e, target_pos)
-#     # print("目标位置:", [f"{val:.6f}" for val in target_pos])
+#     # print("Target pose:", [f"{val:.6f}" for val in target_pos])
 #     Traj.append(target_pos.copy())
 
 # trajectory = np.array(Traj)

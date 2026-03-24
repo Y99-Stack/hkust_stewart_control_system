@@ -12,8 +12,13 @@ from ForceSensor.ati_mini85 import ATIMini85
 from ForceSensor.control_algorithm import ControlAlgorithm
 from Mode.platform_startup import ensure_platform_ready
 
+# Main control-loop period in seconds.
+# 0.01 s means the controller updates at 100 Hz.
 DEFAULT_CONTROL_CYCLE = 0.01
+# Force-sensor sampling rate in Hz (samples per second).
 DEFAULT_FORCE_SAMPLE_RATE = 100
+# Number of raw samples read from the force sensor in one acquisition call.
+# Value 1 means "single latest sample" mode.
 DEFAULT_SAMPLE_CHUNK = 1
 DEFAULT_M_DIAG = np.array([2, 100, 100, 500, 500, 2], dtype=float)
 DEFAULT_D_DIAG = np.array([2.3, 100, 100, 500, 500, 16], dtype=float)
@@ -22,6 +27,7 @@ DEFAULT_ENABLED_AXES = np.ones(6, dtype=float)
 
 
 def _normalize_vector6(value: np.ndarray | list[float] | tuple[float, ...], name: str) -> np.ndarray:
+    # Accept either one scalar (broadcast to 6 axes) or an explicit 6-axis vector.
     arr = np.asarray(value, dtype=float)
     if arr.ndim == 0:
         return np.full(6, float(arr), dtype=float)
@@ -49,21 +55,25 @@ class ForceFeedbackControlSystem:
         ip_setting = IpSetting()
         self.robot = DofController(ip_setting)
         self.use_force_sensor = use_force_sensor
+        # Sensor object is created only when explicitly needed.
         self.force_sensor = ATIMini85() if use_force_sensor else None
 
         self.control_cycle = control_cycle
         self.force_sample_rate = force_sample_rate
         self.sample_chunk = sample_chunk
         self.force_transform = force_transform
+        # When fixed_force is provided, it overrides live sensor force in control loop.
         self.fixed_force = (
             _normalize_vector6(fixed_force, "fixed_force") if fixed_force is not None else None
         )
+        # Axis mask: 1 means force control enabled on this axis, 0 means disabled.
         self.enabled_axes = (
             _normalize_vector6(enabled_axes, "enabled_axes")
             if enabled_axes is not None
             else DEFAULT_ENABLED_AXES.copy()
         )
 
+        # MDK are diagonal-only by design in this mode.
         m = np.diag(_normalize_vector6(m_diag, "m_diag") if m_diag is not None else DEFAULT_M_DIAG)
         d = np.diag(_normalize_vector6(d_diag, "d_diag") if d_diag is not None else DEFAULT_D_DIAG)
         k = np.diag(_normalize_vector6(k_diag, "k_diag") if k_diag is not None else DEFAULT_K_DIAG)
@@ -77,6 +87,7 @@ class ForceFeedbackControlSystem:
         self.control_thread: threading.Thread | None = None
 
     def force_acquisition(self) -> None:
+        # Guard for modes that intentionally skip hardware force acquisition.
         if not self.use_force_sensor or self.force_sensor is None:
             return
 
@@ -99,6 +110,7 @@ class ForceFeedbackControlSystem:
                     forces[:, 3:] = tmp[:, :3]
 
                     if self.force_queue.full():
+                        # Keep queue fresh by dropping stale sample when full.
                         self.force_queue.get_nowait()
 
                     self.force_queue.put(forces[-1])
@@ -136,16 +148,19 @@ class ForceFeedbackControlSystem:
                             continue
 
                         while self.force_queue.qsize() > 1:
+                            # Only keep latest sample to avoid delayed control response.
                             self.force_queue.get_nowait()
 
                         measured_force = self.force_queue.get()
 
+                    # Force source priority: fixed_force > measured sensor force.
                     source_force = self.fixed_force if self.fixed_force is not None else measured_force
                     force_error = np.asarray(self.force_transform(source_force), dtype=float)
                     if force_error.shape != (6,):
                         raise ValueError(
                             f"force_transform output must be shape (6,), got {force_error.shape}."
                         )
+                    # Apply per-axis enable mask after transformation.
                     force_error = force_error * self.enabled_axes
                     target_pos = self.control_algorithm.update(force_error, current_pos)
                     if self.use_force_sensor:
@@ -170,6 +185,7 @@ class ForceFeedbackControlSystem:
         if self.use_force_sensor:
             self.force_thread = threading.Thread(target=self.force_acquisition, daemon=True)
             self.force_thread.start()
+            # Small delay allows acquisition thread to produce first valid sample.
             time.sleep(0.1)
         else:
             self.force_thread = None
@@ -199,6 +215,7 @@ def run_force_feedback_mode(
     d_diag: np.ndarray | list[float] | tuple[float, ...] | float | None = None,
     k_diag: np.ndarray | list[float] | tuple[float, ...] | float | None = None,
 ) -> None:
+    # This helper is shared by all force-feedback mode wrappers.
     system = ForceFeedbackControlSystem(
         force_transform=force_transform,
         control_cycle=control_cycle,

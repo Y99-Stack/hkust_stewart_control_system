@@ -8,18 +8,18 @@ from Controller.ip_setting import IpSetting
 import time
 import csv
 
-# 20250227 随行运动正确版
+# 20250227 validated follow-motion script version
 
 def main():
-    # 初始化 IP 设置
+    # Initialize IP settings.
     ip_setting = IpSetting()
 
-    # 创建控制器实例
+    # Create the platform controller client.
     controller = DofController(ip_setting)
 
     controller.connect()
-    # 构造命令消息
-    # 到达某一个点
+    # Build a command message.
+    # Example goal: move to one target point.
     command = CommandMessage(
         # command_code=CommandCodes.FindBottomInitialize     # 4
         # command_code=CommandCodes.MoveFromBottomToMiddle   # 6
@@ -30,28 +30,28 @@ def main():
         # frequency_array = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
         # phase_array
 
-        # dofs=[10, 0.0, 0.0, 0.0, 0.0, 0] # 设置姿态
+        # dofs=[10, 0.0, 0.0, 0.0, 0.0, 0] # Set target pose.
     )
     command_bytes = command.to_bytes()
     print(f"Command bytes: {command_bytes}")
-    # 发送命令
+    # Send command to platform controller.
     controller.send_command(command)
     feedback = controller.get_feedback()
     dof_feedback = feedback.AttitudesArray # get the real time posistion
-    print("程序已启动，输入 'get feedback' 获取反馈信息，输入 'exit' 退出程序")
+    print("Program started. Enter 'get feedback' for feedback, or 'exit' to quit.")
 
     while True:
-        user_input = input("请输入命令: ").strip().lower()  # 获取用户输入并处理
+        user_input = input("Enter command: ").strip().lower()  # Read and normalize user input.
 
         if user_input == "get feedback":
             feedback = controller.get_feedback()
             if feedback is not None:
-                print(f"收到反馈: {feedback}")
+                print(f"Received feedback: {feedback}")
         elif user_input == "exit":
-            print("程序退出")
+            print("Program exited")
             break
         else:
-            print("无效的命令，请输入 'get feedback' 或 'exit'")
+            print("Invalid command. Enter 'get feedback' or 'exit'.")
 
         #controller.dispose()
 

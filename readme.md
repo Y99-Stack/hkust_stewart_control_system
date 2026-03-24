@@ -34,3 +34,31 @@ python main.py --mode sin_move \
     --sin-frequency 1.0 1.0 1.0 0.0 0.0 0.0 \
     --sin-phase 0.0 0.0 0.0 0.0 0.0 0.0 \
     --sin-monitor 0.5
+
+# steady_lb_force_input
+1. 基础用法（固定力，默认MDK和六轴全开，不接传感器）
+python main.py --mode steady_lb_force_input --force-fixed "[0,0,10,0,0,0]"
+
+2. 固定力 + 先接入力传感器（读取后仍用固定力）
+python main.py --mode steady_lb_force_input --force-fixed "[0,0,10,0,0,0]" --force-use-sensor
+
+3. 完整参数（自定义MDK和六轴开关）
+python main.py --mode steady_lb_force_input \
+    --force-fixed "[0,0,10,0,0,0]" \
+    --force-axes "[1,1,1,1,0,1]" \
+    --force-m "[2,100,100,500,500,2]" \
+    --force-d "[2.3,100,100,500,500,16]" \
+    --force-k "[10,100,100,500,500,100]"
+
+4. 交互式输入（可在终端逐项输入MDK、六轴开关、是否接传感器、固定力）
+python Mode/force_feedback/steady_lb_force_input.py
+
+# steady_arbitary_force_input
+1. 基础用法（必须接入力传感器）
+python main.py --mode steady_arbitary_force_input
+
+2. 自定义六轴开关
+python main.py --mode steady_arbitary_force_input --force-axes "[1,1,1,1,0,1]"
+
+3. 自定义MDK（支持单值或六轴数组）
+python main.py --mode steady_arbitary_force_input --force-m "2" --force-d "100" --force-k "500"

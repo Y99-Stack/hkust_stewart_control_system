@@ -265,28 +265,28 @@ if __name__ == "__main__":
         while True:
             time.sleep(1)  # main thread sleeps for 1 second
     except KeyboardInterrupt:
-        print("\n正在停止采集...")
+        print("\nStopping acquisition...")
         sensor.stop()
         producer.join()
         consumer.join()
 
     app = pg.mkQApp()
-    win = pg.GraphicsLayoutWidget(title="ATI mini85 六维力实时监控")
+    win = pg.GraphicsLayoutWidget(title="ATI mini85 6-axis force real-time monitor")
     win.resize(1200, 800)
 
-    # 创建6个子图
+    # Create 6 subplots.
     plots = [win.addPlot(row=i, col=0, title=name) for i, name in enumerate(['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'])]
     curves = [p.plot(pen=pg.intColor(i)) for i, p in enumerate(plots)]
 
-    # 初始化数据缓冲区
+    # Initialize data buffers.
     buffer_size = 200
     data_buffers = [np.zeros(buffer_size) for _ in range(6)]
 
     def update():
-        # 从DAQ读取数据（假设已集成到全局变量）
+        # Read data from DAQ (assumed integrated as global variables).
         global voltages, processed_forces
         if voltages is not None:
-            # 更新缓冲区
+            # Update buffers.
             for i in range(6):
                 data_buffers[i] = np.roll(data_buffers[i], -len(voltages))
                 data_buffers[i][-len(voltages):] = processed_forces[:, i]
@@ -294,7 +294,7 @@ if __name__ == "__main__":
 
     timer = QtCore.QTimer()
     timer.timeout.connect(update)
-    timer.start(30)  # 刷新频率约33Hz
+    timer.start(30)  # Refresh rate approx. 33 Hz.
 
     win.show()
     app.exec_()"

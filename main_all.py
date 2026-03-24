@@ -60,7 +60,7 @@ class ControlSystem:
                 averaged_forces = np.mean(self.filter_buffer, axis=0)[-1]
                 # real time low pass
                 # current_avg = np.mean(forces, axis=0)
-                # averaged_forces = 0.2*current_avg + 0.8*self.last_avg  # 滤波系数可调
+                # averaged_forces = 0.2*current_avg + 0.8*self.last_avg  # Filter coefficient can be tuned.
                 # self.last_avg = averaged_forces
 
                 # zero

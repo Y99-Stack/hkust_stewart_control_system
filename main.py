@@ -8,6 +8,7 @@ DEFAULT_MODE = "point_move"
 
 
 def _parse_vector_arg(raw_value: str | None, arg_name: str, required: bool = False) -> list[float] | None:
+    # Parse scalar or 6-axis vector from CLI string argument.
     if raw_value is None:
         if required:
             raise ValueError(f"--{arg_name} is required for this mode.")
@@ -21,12 +22,15 @@ def _parse_vector_arg(raw_value: str | None, arg_name: str, required: bool = Fal
 
     parsed: Any
     try:
+        # Supports forms like "[1,2,3,4,5,6]" or "2".
         parsed = literal_eval(text)
         data = list(parsed) if isinstance(parsed, (list, tuple)) else [float(parsed)]
     except (ValueError, SyntaxError):
+        # Fallback for plain comma-separated input like "1,2,3,4,5,6".
         data = [float(part.strip()) for part in text.split(",") if part.strip()]
 
     if len(data) == 1:
+        # Broadcast one scalar to all six axes.
         return [float(data[0])] * 6
 
     if len(data) != 6:
@@ -179,6 +183,7 @@ def build_mode_kwargs(args: argparse.Namespace) -> dict:
         }
 
     if args.mode == "steady_lb_force_input":
+        # LB mode requires explicit fixed force input.
         return {
             "fixed_force": _parse_vector_arg(args.force_fixed, "force-fixed", required=True),
             "use_force_sensor": args.force_use_sensor,
@@ -189,6 +194,7 @@ def build_mode_kwargs(args: argparse.Namespace) -> dict:
         }
 
     if args.mode == "steady_arbitary_force_input":
+        # Arbitrary mode ignores --force-fixed and always uses live sensor forces.
         return {
             "enabled_axes": _parse_vector_arg(args.force_axes, "force-axes", required=False),
             "m_diag": _parse_vector_arg(args.force_m, "force-m", required=False),

@@ -14,7 +14,7 @@ class ForceVisualizer:
         :param update_interval: interface refresh interval (milliseconds)
         """
         self.app = pg.mkQApp()
-        self.win = pg.GraphicsLayoutWidget(title="ATI mini85 六维力实时监控")
+        self.win = pg.GraphicsLayoutWidget(title="ATI mini85 6-axis force real-time monitor")
         self.win.resize(1200, 800)
         
         # 6 subplots
@@ -202,7 +202,7 @@ class SingleAxisMonitor:
         
         # QtWidgets.QApplication.processEvents()
     def save_data(self):
-        # 将当前数据保存到列表
+        # Save current sample to in-memory list.
         self.data.append({
             "time": self.time[-1],
             "target_pos": self.target_pos[-1],
@@ -210,15 +210,15 @@ class SingleAxisMonitor:
             "z_force": self.z_force[-1]
         })
         
-        # 每隔一定时间保存到文件
-        if len(self.data) >= 100:  # 每100个数据点保存一次
+        # Persist to file at fixed intervals.
+        if len(self.data) >= 100:  # Save once every 100 samples.
             self.export_to_csv()
 
     def export_to_csv(self):
-        # 确保目录存在
+        # Ensure output directory exists.
         os.makedirs(os.path.dirname(self.data_file_path), exist_ok=True)
         
-        # 写入CSV文件
+        # Write CSV file.
         with open(self.data_file_path, 'w', newline='') as csvfile:
             fieldnames = ['time', 'target_pos', 'actual_pos', 'z_force']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -230,7 +230,7 @@ class SingleAxisMonitor:
         print(f"Data exported to {self.data_file_path}")
 
     def close(self):
-        # 在程序结束时导出所有数据
+        # Export all buffered data on program exit.
         self.export_to_csv()
         self.win.close()
         self.app.quit()

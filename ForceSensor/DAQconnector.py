@@ -8,4 +8,4 @@ with nidaqmx.Task() as task:
         terminal_config=TerminalConfiguration.DIFF 
     )
     raw_voltage = task.read()
-    print(f"原始电压数据: {raw_voltage}")
+    print(f"Raw voltage data: {raw_voltage}")

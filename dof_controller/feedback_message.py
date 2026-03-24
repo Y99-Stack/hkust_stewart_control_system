@@ -38,7 +38,7 @@ class StatusCodes(Enum):
 
 @dataclass
 class FeedbackMessage:
-    Id: int # 固定55
+    Id: int # Fixed packet identifier value: 55.
     DOFStatus: StatusCodes
     DI: int
     Rev1: int
@@ -51,7 +51,7 @@ class FeedbackMessage:
 
     @staticmethod
     def from_bytes(data: bytes) -> 'FeedbackMessage':
-        " 从字节数组构造FeedbackMessage 实例"
+        "Build a FeedbackMessage instance from raw bytes."
         #print(data)
         Id = data[0]
         DOFStatus = StatusCodes(data[1])
@@ -59,7 +59,7 @@ class FeedbackMessage:
         Rev1 = data[3]
 
         
-        # 使用 struct.unpack 解析浮点数
+        # Parse packed floating-point arrays using struct.unpack.
         AttitudesArray = list(struct.unpack('<6f', data[4:28]))  
         CylindersErrorCodeArray = list(struct.unpack('<6f', data[28:52]))  
         CylindersMotorCodeArray = list(struct.unpack('<6f', data[52:76])) 
