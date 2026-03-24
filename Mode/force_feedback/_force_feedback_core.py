@@ -1,0 +1,163 @@
+import threading
+import time
+from queue import Queue
+from typing import Callable
+
+import numpy as np
+
+from Controller.command_message import CommandCodes, CommandMessage
+from Controller.dof_controller import DofController
+from Controller.ip_setting import IpSetting
+from ForceSensor.ati_mini85 import ATIMini85
+from ForceSensor.control_algorithm import ControlAlgorithm
+from Mode.platform_startup import ensure_platform_ready
+
+DEFAULT_CONTROL_CYCLE = 0.01
+DEFAULT_FORCE_SAMPLE_RATE = 100
+DEFAULT_SAMPLE_CHUNK = 1
+
+
+class ForceFeedbackControlSystem:
+    def __init__(
+        self,
+        force_transform: Callable[[np.ndarray], np.ndarray],
+        control_cycle: float = DEFAULT_CONTROL_CYCLE,
+        force_sample_rate: int = DEFAULT_FORCE_SAMPLE_RATE,
+        sample_chunk: int = DEFAULT_SAMPLE_CHUNK,
+    ):
+        ip_setting = IpSetting()
+        self.robot = DofController(ip_setting)
+        self.force_sensor = ATIMini85()
+
+        self.control_cycle = control_cycle
+        self.force_sample_rate = force_sample_rate
+        self.sample_chunk = sample_chunk
+        self.force_transform = force_transform
+
+        m = np.diag([2, 100, 100, 500, 500, 2])  
+        d = np.diag([2.3, 100, 100, 500, 500, 16])
+        k = np.diag([10, 100, 100, 500, 500, 100])
+        self.control_algorithm = ControlAlgorithm(m, d, k, control_cycle)
+
+        self.force_queue: Queue[np.ndarray] = Queue(maxsize=max(1, force_sample_rate // 5))
+        self.force_event = threading.Event()
+        self.exit_event = threading.Event()
+
+        self.force_thread: threading.Thread | None = None
+        self.control_thread: threading.Thread | None = None
+
+    def force_acquisition(self) -> None:
+        self.force_sensor.start(sampling_rate=self.force_sample_rate)
+        self.force_sensor.calibrate_zero()
+        try:
+            target_period = 1 / self.force_sample_rate
+            while not self.exit_event.is_set():
+                start = time.perf_counter()
+                forces = self.force_sensor.get_calibrated_forces(num_samples=self.sample_chunk)
+                if forces.shape[0] != self.sample_chunk or forces.shape[1] != 6:
+                    print(
+                        f"Warning: Unexpected forces shape: {forces.shape}. "
+                        f"Expected shape: ({self.sample_chunk}, 6)"
+                    )
+                else:
+                    # Align sensor channels with controller conventions.
+                    tmp = forces.copy()
+                    forces[:, :3] = tmp[:, 3:]
+                    forces[:, 3:] = tmp[:, :3]
+
+                    if self.force_queue.full():
+                        self.force_queue.get_nowait()
+
+                    self.force_queue.put(forces[-1])
+                    self.force_event.set()
+
+                elapsed = time.perf_counter() - start
+                time.sleep(max(0, target_period - elapsed))
+        finally:
+            self.force_sensor.stop()
+            print("Force sensor acquisition thread stopped!")
+
+    def control_loop(self) -> None:
+        self.robot.connect()
+        ensure_platform_ready(self.robot)
+        last_control_time = time.time()
+
+        try:
+            while not self.exit_event.is_set():
+                current_time = time.time()
+                if current_time >= last_control_time:
+                    feedback = self.robot.get_feedback()
+                    if feedback is None:
+                        last_control_time += self.control_cycle
+                        continue
+
+                    current_pos = feedback.AttitudesArray
+                    if not self.force_event.is_set():
+                        self.force_event.wait(timeout=self.control_cycle)
+
+                    if self.force_queue.empty():
+                        last_control_time += self.control_cycle
+                        continue
+
+                    while self.force_queue.qsize() > 1:
+                        self.force_queue.get_nowait()
+
+                    measured_force = self.force_queue.get()
+                    force_error = np.asarray(self.force_transform(measured_force), dtype=float)
+                    target_pos = self.control_algorithm.update(force_error, current_pos)
+                    self.force_event.clear()
+
+                    command = CommandMessage(
+                        command_code=CommandCodes.ContinuousMoving,
+                        dofs=target_pos,
+                    )
+                    self.robot.send_command(command)
+
+                    last_control_time += self.control_cycle
+                    if last_control_time < current_time:
+                        last_control_time = current_time + self.control_cycle
+                else:
+                    time.sleep(max(0, last_control_time - current_time - 0.001))
+        finally:
+            self.robot.dispose()
+            print("Control loop thread stopped!")
+
+    def start(self) -> None:
+        self.force_thread = threading.Thread(target=self.force_acquisition, daemon=True)
+        self.control_thread = threading.Thread(target=self.control_loop, daemon=True)
+
+        self.force_thread.start()
+        time.sleep(0.1)
+        self.control_thread.start()
+
+    def stop(self) -> None:
+        self.exit_event.set()
+
+        if self.force_thread is not None and self.force_thread.is_alive():
+            self.force_thread.join()
+        if self.control_thread is not None and self.control_thread.is_alive():
+            self.control_thread.join()
+
+
+
+def run_force_feedback_mode(
+    force_transform: Callable[[np.ndarray], np.ndarray],
+    control_cycle: float = DEFAULT_CONTROL_CYCLE,
+    force_sample_rate: int = DEFAULT_FORCE_SAMPLE_RATE,
+    sample_chunk: int = DEFAULT_SAMPLE_CHUNK,
+) -> None:
+    system = ForceFeedbackControlSystem(
+        force_transform=force_transform,
+        control_cycle=control_cycle,
+        force_sample_rate=force_sample_rate,
+        sample_chunk=sample_chunk,
+    )
+
+    try:
+        system.start()
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        system.stop()
