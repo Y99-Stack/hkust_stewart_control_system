@@ -8,7 +8,11 @@ def _arbitrary_force_transform(force: np.ndarray) -> np.ndarray:
 
 
 def run_mode(**kwargs) -> None:
-    run_force_feedback_mode(force_transform=_arbitrary_force_transform, **kwargs)
+    run_force_feedback_mode(
+        force_transform=_arbitrary_force_transform,
+        use_force_sensor=True,
+        **kwargs,
+    )
 
 
 if __name__ == "__main__":

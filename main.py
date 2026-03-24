@@ -1,8 +1,38 @@
 import argparse
+from ast import literal_eval
+from typing import Any
 
 from Mode import list_modes, run_mode
 
 DEFAULT_MODE = "point_move"
+
+
+def _parse_vector_arg(raw_value: str | None, arg_name: str, required: bool = False) -> list[float] | None:
+    if raw_value is None:
+        if required:
+            raise ValueError(f"--{arg_name} is required for this mode.")
+        return None
+
+    text = raw_value.strip()
+    if not text:
+        if required:
+            raise ValueError(f"--{arg_name} cannot be empty.")
+        return None
+
+    parsed: Any
+    try:
+        parsed = literal_eval(text)
+        data = list(parsed) if isinstance(parsed, (list, tuple)) else [float(parsed)]
+    except (ValueError, SyntaxError):
+        data = [float(part.strip()) for part in text.split(",") if part.strip()]
+
+    if len(data) == 1:
+        return [float(data[0])] * 6
+
+    if len(data) != 6:
+        raise ValueError(f"--{arg_name} must contain 6 values or a single scalar value.")
+
+    return [float(v) for v in data]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -82,6 +112,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Feedback monitor seconds for sin_move mode",
     )
 
+    parser.add_argument(
+        "--force-fixed",
+        type=str,
+        default=None,
+        help="Fixed 6-axis force for steady_lb_force_input, e.g. [0,0,10,0,0,0]",
+    )
+    parser.add_argument(
+        "--force-use-sensor",
+        action="store_true",
+        help="Connect force sensor before control (optional for steady_lb_force_input)",
+    )
+    parser.add_argument(
+        "--force-axes",
+        type=str,
+        default=None,
+        help="6-axis enable mask, e.g. [1,1,1,1,1,1]",
+    )
+    parser.add_argument(
+        "--force-m",
+        type=str,
+        default=None,
+        help="M diag, scalar or 6 values",
+    )
+    parser.add_argument(
+        "--force-d",
+        type=str,
+        default=None,
+        help="D diag, scalar or 6 values",
+    )
+    parser.add_argument(
+        "--force-k",
+        type=str,
+        default=None,
+        help="K diag, scalar or 6 values",
+    )
+
     return parser
 
 
@@ -110,6 +176,24 @@ def build_mode_kwargs(args: argparse.Namespace) -> dict:
             "frequency_array": args.sin_frequency,
             "phase_array": args.sin_phase,
             "monitor_seconds": args.sin_monitor,
+        }
+
+    if args.mode == "steady_lb_force_input":
+        return {
+            "fixed_force": _parse_vector_arg(args.force_fixed, "force-fixed", required=True),
+            "use_force_sensor": args.force_use_sensor,
+            "enabled_axes": _parse_vector_arg(args.force_axes, "force-axes", required=False),
+            "m_diag": _parse_vector_arg(args.force_m, "force-m", required=False),
+            "d_diag": _parse_vector_arg(args.force_d, "force-d", required=False),
+            "k_diag": _parse_vector_arg(args.force_k, "force-k", required=False),
+        }
+
+    if args.mode == "steady_arbitary_force_input":
+        return {
+            "enabled_axes": _parse_vector_arg(args.force_axes, "force-axes", required=False),
+            "m_diag": _parse_vector_arg(args.force_m, "force-m", required=False),
+            "d_diag": _parse_vector_arg(args.force_d, "force-d", required=False),
+            "k_diag": _parse_vector_arg(args.force_k, "force-k", required=False),
         }
 
     return {}
