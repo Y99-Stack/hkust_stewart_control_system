@@ -60,5 +60,8 @@ python main.py --mode steady_arbitary_force_input
 2. 自定义六轴开关
 python main.py --mode steady_arbitary_force_input --force-axes "[1,1,1,1,0,1]"
 
-3. 自定义MDK（支持单值或六轴数组）
-python main.py --mode steady_arbitary_force_input --force-m "2" --force-d "100" --force-k "500"
+3. 自定义MDK（六轴数组）
+python main.py --mode steady_arbitary_force_input \
+    --force-m "[2,100,100,500,500,2]" \
+    --force-d "[2.3,100,100,500,500,16]" \
+    --force-k "[10,100,100,500,500,100]"
