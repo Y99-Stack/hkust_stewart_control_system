@@ -65,3 +65,36 @@ python main.py --mode steady_arbitary_force_input \
     --force-m "[2,100,100,500,500,2]" \
     --force-d "[2.3,100,100,500,500,16]" \
     --force-k "[10,100,100,500,500,100]"
+
+# seawave_arbitray_force_input
+1. 基础用法（默认波形文件 data/wave/example1.txt，每周期逐行读取并循环，叠加传感器力控）
+python main.py --mode seawave_arbitray_force_input
+
+2. 指定seawave文件（支持.txt或.csv）
+python main.py --mode seawave_arbitray_force_input --wave-path data/wave/my_wave.csv
+
+3. 完整参数（六轴MDK + 六轴开关 + 自定义波形文件）
+python main.py --mode seawave_arbitray_force_input \
+    --wave-path data/wave/example1.txt \
+    --force-axes "[1,1,1,1,1,1]" \
+    --force-m "[2,100,100,500,500,2]" \
+    --force-d "[2.3,100,100,500,500,16]" \
+    --force-k "[10,100,100,500,500,100]"
+
+# seawave_lb_force_input
+1. 基础用法（默认波形文件 data/wave/example1.txt，每周期逐行读取并循环，叠加固定力，不接传感器）
+python main.py --mode seawave_lb_force_input --force-fixed "[0,0,10,0,0,0]"
+
+2. 固定力 + 可选接入力传感器
+python main.py --mode seawave_lb_force_input \
+    --force-fixed "[0,0,10,0,0,0]" \
+    --force-use-sensor
+
+3. 指定seawave文件（支持.txt或.csv）+ 六轴MDK/六轴开关
+python main.py --mode seawave_lb_force_input \
+    --force-fixed "[0,0,10,0,0,0]" \
+    --wave-path data/wave/my_wave.csv \
+    --force-axes "[1,1,1,1,1,1]" \
+    --force-m "[2,100,100,500,500,2]" \
+    --force-d "[2.3,100,100,500,500,16]" \
+    --force-k "[10,100,100,500,500,100]"

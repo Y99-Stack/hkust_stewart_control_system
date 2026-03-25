@@ -51,6 +51,7 @@ class ForceFeedbackControlSystem:
         m_diag: np.ndarray | list[float] | tuple[float, ...] | float | None = None,
         d_diag: np.ndarray | list[float] | tuple[float, ...] | float | None = None,
         k_diag: np.ndarray | list[float] | tuple[float, ...] | float | None = None,
+        base_trajectory: Callable[[], np.ndarray] | None = None,
     ):
         ip_setting = IpSetting()
         self.robot = DofController(ip_setting)
@@ -62,6 +63,9 @@ class ForceFeedbackControlSystem:
         self.force_sample_rate = force_sample_rate
         self.sample_chunk = sample_chunk
         self.force_transform = force_transform
+        # Optional per-cycle base motion target (6 DOF) to be used as desired trajectory.
+        # When None, desired trajectory stays at controller default (typically zeros).
+        self.base_trajectory = base_trajectory
         # When fixed_force is provided, it overrides live sensor force in control loop.
         self.fixed_force = (
             _normalize_vector6(fixed_force, "fixed_force") if fixed_force is not None else None
@@ -155,6 +159,16 @@ class ForceFeedbackControlSystem:
 
                     # Force source priority: fixed_force > measured sensor force.
                     source_force = self.fixed_force if self.fixed_force is not None else measured_force
+
+                    if self.base_trajectory is not None:
+                        base_target = np.asarray(self.base_trajectory(), dtype=float)
+                        if base_target.shape != (6,):
+                            raise ValueError(
+                                f"base_trajectory output must be shape (6,), got {base_target.shape}."
+                            )
+                        # Base target is treated as [rx, ry, rz, x, y, z] with rotational terms in degree.
+                        self.control_algorithm.set_desired_trajectory(base_target, deg_input=True)
+
                     force_error = np.asarray(self.force_transform(source_force), dtype=float)
                     if force_error.shape != (6,):
                         raise ValueError(
@@ -214,6 +228,7 @@ def run_force_feedback_mode(
     m_diag: np.ndarray | list[float] | tuple[float, ...] | float | None = None,
     d_diag: np.ndarray | list[float] | tuple[float, ...] | float | None = None,
     k_diag: np.ndarray | list[float] | tuple[float, ...] | float | None = None,
+    base_trajectory: Callable[[], np.ndarray] | None = None,
 ) -> None:
     # This helper is shared by all force-feedback mode wrappers.
     system = ForceFeedbackControlSystem(
@@ -227,6 +242,7 @@ def run_force_feedback_mode(
         m_diag=m_diag,
         d_diag=d_diag,
         k_diag=k_diag,
+        base_trajectory=base_trajectory,
     )
 
     try:

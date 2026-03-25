@@ -151,6 +151,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="K diag, scalar or 6 values",
     )
+    parser.add_argument(
+        "--wave-path",
+        type=str,
+        default="data/wave/example1.txt",
+        help="Wave baseline file for seawave modes (.txt/.csv), default data/wave/example1.txt",
+    )
 
     return parser
 
@@ -196,6 +202,26 @@ def build_mode_kwargs(args: argparse.Namespace) -> dict:
     if args.mode == "steady_arbitary_force_input":
         # Arbitrary mode ignores --force-fixed and always uses live sensor forces.
         return {
+            "enabled_axes": _parse_vector_arg(args.force_axes, "force-axes", required=False),
+            "m_diag": _parse_vector_arg(args.force_m, "force-m", required=False),
+            "d_diag": _parse_vector_arg(args.force_d, "force-d", required=False),
+            "k_diag": _parse_vector_arg(args.force_k, "force-k", required=False),
+        }
+
+    if args.mode == "seawave_arbitray_force_input":
+        return {
+            "wave_path": args.wave_path,
+            "enabled_axes": _parse_vector_arg(args.force_axes, "force-axes", required=False),
+            "m_diag": _parse_vector_arg(args.force_m, "force-m", required=False),
+            "d_diag": _parse_vector_arg(args.force_d, "force-d", required=False),
+            "k_diag": _parse_vector_arg(args.force_k, "force-k", required=False),
+        }
+
+    if args.mode == "seawave_lb_force_input":
+        return {
+            "wave_path": args.wave_path,
+            "fixed_force": _parse_vector_arg(args.force_fixed, "force-fixed", required=True),
+            "use_force_sensor": args.force_use_sensor,
             "enabled_axes": _parse_vector_arg(args.force_axes, "force-axes", required=False),
             "m_diag": _parse_vector_arg(args.force_m, "force-m", required=False),
             "d_diag": _parse_vector_arg(args.force_d, "force-d", required=False),
