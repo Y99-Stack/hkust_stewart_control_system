@@ -1,4 +1,6 @@
-# csv_mode
+# 6-Axis-Stewart-Force-Control
+pip install -r requirements.txt
+## csv_mode
 PS: 联系厂家确认index
 1. 基础用法
 python main.py --mode csv_move
@@ -9,7 +11,7 @@ python main.py --mode csv_move --csv-path data/my_script.txt --script-monitor 0.
 3. 完整参数
 python main.py --mode csv_move --csv-path data/wave/example2.txt --script-index 2 --script-monitor 1.0
 
-# point_move
+## point_move
 0. base
 python main.py
 1. poistion
@@ -24,7 +26,7 @@ python main.py --mode rt_move
 2. 指定间隔
 python main.py --mode rt_move --rt-interval 0.05
 
-# sin_move
+## sin_move
 1. 基础正弦波（6个自由度）
 python main.py --mode sin_move --sin-amplitude 0.1 0.1 0.1 0.0 0.0 0.0 --sin-frequency 1.0 1.0 1.0 0.0 0.0 0.0
 
@@ -35,7 +37,7 @@ python main.py --mode sin_move \
     --sin-phase 0.0 0.0 0.0 0.0 0.0 0.0 \
     --sin-monitor 0.5
 
-# steady_lb_force_input
+## steady_lb_force_input
 1. 基础用法（固定力，默认MDK和六轴全开，不接传感器）
 python main.py --mode steady_lb_force_input --force-fixed "[0,0,10,0,0,0]"
 
@@ -53,7 +55,7 @@ python main.py --mode steady_lb_force_input \
 4. 交互式输入（可在终端逐项输入MDK、六轴开关、是否接传感器、固定力）
 python Mode/force_feedback/steady_lb_force_input.py
 
-# steady_arbitary_force_input
+## steady_arbitary_force_input
 1. 基础用法（必须接入力传感器）
 python main.py --mode steady_arbitary_force_input
 
@@ -66,7 +68,7 @@ python main.py --mode steady_arbitary_force_input \
     --force-d "[2.3,100,100,500,500,16]" \
     --force-k "[10,100,100,500,500,100]"
 
-# seawave_arbitray_force_input
+## seawave_arbitray_force_input
 1. 基础用法（默认波形文件 data/wave/example1.txt，每周期逐行读取并循环，叠加传感器力控）
 python main.py --mode seawave_arbitray_force_input
 
@@ -81,7 +83,7 @@ python main.py --mode seawave_arbitray_force_input \
     --force-d "[2.3,100,100,500,500,16]" \
     --force-k "[10,100,100,500,500,100]"
 
-# seawave_lb_force_input
+## seawave_lb_force_input
 1. 基础用法（默认波形文件 data/wave/example1.txt，每周期逐行读取并循环，叠加固定力，不接传感器）
 python main.py --mode seawave_lb_force_input --force-fixed "[0,0,10,0,0,0]"
 
