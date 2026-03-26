@@ -7,6 +7,43 @@ from Controller.dof_controller import DofController
 from Controller.feedback_message import StatusCodes
 from Controller.ip_setting import IpSetting
 from Mode.platform_startup import ensure_platform_ready
+from limits.pos_milits import scale_amplitude_to_reachable, validate_position_excursion
+from limits.sinwave_acc_vel_limits import validate_sine_motion
+
+
+def _adjust_amplitude_for_position(
+	amplitude: list[float],
+	max_iterations: int = 10,
+) -> tuple[list[float], bool, float]:
+	adjusted = list(amplitude)
+	pos_ok, pos_details = validate_position_excursion(adjusted, method="pairwise")
+	total_scale = 1.0
+	iteration = 0
+
+	while (not pos_ok) and iteration < max_iterations:
+		adjusted, scale = scale_amplitude_to_reachable(adjusted, pos_details)
+		total_scale *= scale
+		pos_ok, pos_details = validate_position_excursion(adjusted, method="pairwise")
+		iteration += 1
+
+	return adjusted, pos_ok, total_scale
+
+
+def _adjust_amplitude_for_dynamic(amplitude: list[float], dyn_details: dict) -> tuple[list[float], float]:
+	factor = 1.0
+	for axis in dyn_details.get("per_axis", []):
+		v_peak = float(axis.get("v_peak", 0.0))
+		a_peak = float(axis.get("a_peak", 0.0))
+		v_limit = float(axis.get("v_limit", 0.0))
+		a_limit = float(axis.get("a_limit", 0.0))
+
+		if v_peak > 1e-12:
+			factor = min(factor, v_limit / v_peak)
+		if a_peak > 1e-12:
+			factor = min(factor, a_limit / a_peak)
+
+	factor = max(0.0, min(1.0, factor * 0.999))
+	return [a * factor for a in amplitude], factor
 
 
 def _monitor_feedback(
@@ -96,6 +133,23 @@ def run_mode(
 
 	if len(amplitude) != 6 or len(frequency) != 6 or len(phase) != 6:
 		raise ValueError("amplitude_array/frequency_array/phase_array must all contain 6 values")
+
+	amplitude, pos_ok, pos_scale = _adjust_amplitude_for_position(amplitude)
+	if not pos_ok:
+		raise ValueError("Sine amplitude exceeds reachable workspace and auto-adjustment failed")
+	if pos_scale < 0.999999:
+		print("[LIMIT] Sine amplitude exceeded workspace and was auto-adjusted.")
+		print(f"[LIMIT] position_scale={pos_scale:.6f}, adjusted_amplitude={amplitude}")
+
+	dyn_ok, dyn_details = validate_sine_motion(amplitude, frequency)
+	if not dyn_ok:
+		amplitude_dyn, dyn_scale = _adjust_amplitude_for_dynamic(amplitude, dyn_details)
+		dyn_ok_after, _ = validate_sine_motion(amplitude_dyn, frequency)
+		if not dyn_ok_after:
+			raise ValueError("Sine dynamic limits exceeded and auto-adjustment failed")
+		amplitude = amplitude_dyn
+		print("[LIMIT] Sine velocity/acceleration exceeded limits and amplitude was auto-adjusted.")
+		print(f"[LIMIT] dynamic_scale={dyn_scale:.6f}, adjusted_amplitude={amplitude}")
 
 	controller = DofController(IpSetting())
 	try:

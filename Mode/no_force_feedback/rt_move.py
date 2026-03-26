@@ -5,6 +5,7 @@ from Controller.command_message import CommandCodes, CommandMessage, SubCommandC
 from Controller.dof_controller import DofController
 from Controller.ip_setting import IpSetting
 from Mode.platform_startup import ensure_platform_ready
+from limits.pos_milits import scale_amplitude_to_reachable, validate_position_excursion
 
 try:
 	import msvcrt
@@ -24,6 +25,21 @@ TARGET_POSITION_ARRAY: list[list[float]] = [
 
 # If needed, change this constant for repeated execution.
 LOOP_SEQUENCE = False
+
+
+def _adjust_to_reachable(dofs: list[float], max_iterations: int = 10) -> tuple[list[float], bool, float]:
+	adjusted = list(dofs)
+	pos_ok, pos_details = validate_position_excursion(adjusted, method="pairwise")
+	total_scale = 1.0
+	iteration = 0
+
+	while (not pos_ok) and iteration < max_iterations:
+		adjusted, scale = scale_amplitude_to_reachable(adjusted, pos_details)
+		total_scale *= scale
+		pos_ok, pos_details = validate_position_excursion(adjusted, method="pairwise")
+		iteration += 1
+
+	return adjusted, pos_ok, total_scale
 
 
 def _keyboard_control_worker(
@@ -76,6 +92,21 @@ def run_mode(position_interval: float = 0.1) -> None:
 		if len(dofs) != 6:
 			raise ValueError(f"Target position at index {index} must contain 6 values")
 
+	adjusted_positions: list[list[float]] = []
+	for index, dofs in enumerate(positions):
+		adjusted, reachable, scale = _adjust_to_reachable(dofs)
+		if not reachable:
+			raise ValueError(
+				f"Target position at index {index} exceeds reachable workspace and auto-adjustment failed"
+			)
+		if scale < 0.999999:
+			print(
+				f"[LIMIT] point#{index + 1} exceeded workspace and was auto-adjusted "
+				f"(scale={scale:.6f})"
+			)
+			print(f"[LIMIT] original={dofs}, adjusted={adjusted}")
+		adjusted_positions.append(adjusted)
+
 	controller = DofController(IpSetting())
 	stop_event = threading.Event()
 	state = {"paused": False, "continue_armed": False}
@@ -94,9 +125,9 @@ def run_mode(position_interval: float = 0.1) -> None:
 		sequence_count = 0
 		while not stop_event.is_set():
 			sequence_count += 1
-			print(f"Running position sequence #{sequence_count} ({len(positions)} points)")
+			print(f"Running position sequence #{sequence_count} ({len(adjusted_positions)} points)")
 
-			for point_index, dofs in enumerate(positions, start=1):
+			for point_index, dofs in enumerate(adjusted_positions, start=1):
 				if stop_event.is_set():
 					break
 

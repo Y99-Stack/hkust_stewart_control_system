@@ -6,6 +6,7 @@ from Controller.command_message import CommandCodes, CommandMessage
 from Controller.dof_controller import DofController
 from Controller.ip_setting import IpSetting
 from Mode.platform_startup import ensure_platform_ready
+from limits.pos_milits import scale_amplitude_to_reachable, validate_position_excursion
 
 SCRIPT_INDEX_BINDINGS: dict[str, int] = {
 	"data/wave/example1.txt": 1,
@@ -26,11 +27,28 @@ def _infer_script_index(script_path: Path) -> int | None:
 	return None
 
 
-def _validate_script_file(script_path: Path) -> tuple[int, int]:
+def _adjust_row_to_reachable(dofs: list[float], max_iterations: int = 10) -> tuple[list[float], bool, float]:
+	adjusted = list(dofs)
+	pos_ok, pos_details = validate_position_excursion(adjusted, method="pairwise")
+	total_scale = 1.0
+	iteration = 0
+
+	while (not pos_ok) and iteration < max_iterations:
+		adjusted, scale = scale_amplitude_to_reachable(adjusted, pos_details)
+		total_scale *= scale
+		pos_ok, pos_details = validate_position_excursion(adjusted, method="pairwise")
+		iteration += 1
+
+	return adjusted, pos_ok, total_scale
+
+
+def _validate_script_file(script_path: Path) -> tuple[int, int, int, list[str]]:
 	valid_rows = 0
 	reserved_zero_violations = 0
 	nonzero_motion_rows = 0
 	max_abs_motion = 0.0
+	limit_violations = 0
+	limit_messages: list[str] = []
 
 	with script_path.open("r", newline="", encoding="utf-8-sig") as f:
 		reader = csv.reader(f)
@@ -51,6 +69,21 @@ def _validate_script_file(script_path: Path) -> tuple[int, int]:
 
 			if abs(values[6]) > 1e-9:
 				reserved_zero_violations += 1
+
+			dofs = values[:6]
+			_, reachable, scale = _adjust_row_to_reachable(dofs)
+			if not reachable:
+				limit_violations += 1
+				if len(limit_messages) < 8:
+					limit_messages.append(
+						f"line {row_index}: position out of workspace and auto-adjustment failed"
+					)
+			elif scale < 0.999999:
+				limit_violations += 1
+				if len(limit_messages) < 8:
+					limit_messages.append(
+						f"line {row_index}: position exceeds workspace; suggested scale={scale:.6f}"
+					)
 
 			row_max_abs = max(abs(v) for v in values[:6])
 			if row_max_abs > 1e-9:
@@ -74,7 +107,7 @@ def _validate_script_file(script_path: Path) -> tuple[int, int]:
 			f"max_abs_motion={max_abs_motion:.6f}"
 		)
 
-	return valid_rows, reserved_zero_violations
+	return valid_rows, reserved_zero_violations, limit_violations, limit_messages
 
 
 def _resolve_script_path(script_path: str) -> Path:
@@ -121,10 +154,18 @@ def run_mode(
 			f"but script_file_index={script_file_index} was provided."
 		)
 
-	row_count, reserved_mismatch_count = _validate_script_file(path_obj)
+	row_count, reserved_mismatch_count, limit_violations, limit_messages = _validate_script_file(path_obj)
 	if reserved_mismatch_count > 0:
 		print(
 			f"Warning: {reserved_mismatch_count} rows have non-zero reserved column in {script_path}"
+		)
+	if limit_violations > 0:
+		print("[LIMIT] CSV position limits exceeded.")
+		for msg in limit_messages:
+			print(f"[LIMIT] {msg}")
+		raise ValueError(
+			"CSV contains out-of-workspace points. "
+			"Please update script values (or pre-scale them) before WorkingWithScript."
 		)
 
 	controller = DofController(IpSetting())
