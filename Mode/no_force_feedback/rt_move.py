@@ -1,5 +1,7 @@
 import threading
 import time
+import csv
+from pathlib import Path
 
 from Controller.command_message import CommandCodes, CommandMessage, SubCommandCodes
 from Controller.dof_controller import DofController
@@ -12,18 +14,50 @@ except ImportError:  # pragma: no cover
 	msvcrt = None
 
 
-TARGET_POSITION_ARRAY: list[list[float]] = [
-	[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-	[0.0, 0.0, 0.0, 0.5, 0.0, 0.0],
-	[0.0, 0.0, 0.0, 1.0, 0.2, 0.0],
-	[0.0, 0.0, 0.0, 1.5, 0.2, 0.2],
-	[0.0, 0.0, 0.0, 1.0, 0.0, 0.5],
-	[0.0, 0.0, 0.0, 0.5, -0.2, 0.2],
-	[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-]
+DEFAULT_RT_PATH = "data/wave/example1.txt"
 
 # If needed, change this constant for repeated execution.
 LOOP_SEQUENCE = False
+
+
+def _resolve_position_path(position_path: str) -> Path:
+	path_obj = Path(position_path)
+	if path_obj.is_absolute():
+		return path_obj
+
+	repo_root = Path(__file__).resolve().parents[2]
+	return repo_root / path_obj
+
+
+def _load_target_positions(position_path: str) -> list[list[float]]:
+	path_obj = _resolve_position_path(position_path)
+	if not path_obj.exists():
+		raise FileNotFoundError(f"RT move file not found: {position_path}")
+
+	positions: list[list[float]] = []
+	with path_obj.open("r", newline="", encoding="utf-8-sig") as csv_file:
+		reader = csv.reader(csv_file)
+		for row_index, row in enumerate(reader, start=1):
+			if not row or all(not value.strip() for value in row):
+				continue
+
+			if len(row) not in (6, 7):
+				raise ValueError(
+					f"Invalid RT move format at line {row_index}: expected 6 or 7 columns, got {len(row)}"
+				)
+
+			try:
+				values = [float(value) for value in row]
+			except ValueError as exc:
+				raise ValueError(f"Invalid numeric value at line {row_index}: {row}") from exc
+
+			positions.append(values[:6])
+
+	if not positions:
+		raise ValueError(f"No valid target positions found in file: {position_path}")
+
+	print(f"Loaded {len(positions)} target positions from {path_obj}")
+	return positions
 
 
 def _keyboard_control_worker(
@@ -34,7 +68,7 @@ def _keyboard_control_worker(
 	if not enable_control or msvcrt is None:
 		return
 
-	print("Keyboard control enabled: Space=pause, C+Space=continue, Q=quit")
+	print("Keyboard control enabled: Space=pause/resume, Q=quit")
 	while not stop_event.is_set():
 		if not msvcrt.kbhit():
 			time.sleep(0.02)
@@ -47,38 +81,23 @@ def _keyboard_control_worker(
 			return
 
 		if key == " ":
-			if not state["paused"]:
-				state["paused"] = True
-				state["continue_armed"] = False
-				print("Paused. Press C then Space to continue.")
-			elif state["continue_armed"]:
-				state["paused"] = False
-				state["continue_armed"] = False
-				print("Resumed.")
-			else:
-				print("Still paused. Press C then Space to continue.")
+			state["paused"] = not state["paused"]
+			print("Paused." if state["paused"] else "Resumed.")
 			continue
 
-		if key == "c" and state["paused"]:
-			state["continue_armed"] = True
-			print("Continue armed. Press Space to resume.")
 
-
-def run_mode(position_interval: float = 0.1) -> None:
+def run_mode(position_interval: float = 0.1, position_path: str = DEFAULT_RT_PATH) -> None:
 	if position_interval <= 0:
 		raise ValueError("position_interval must be positive")
 
-	positions = [list(position) for position in TARGET_POSITION_ARRAY]
-
-	if not positions:
-		raise ValueError("target position list is empty")
+	positions = _load_target_positions(position_path)
 	for index, dofs in enumerate(positions):
 		if len(dofs) != 6:
 			raise ValueError(f"Target position at index {index} must contain 6 values")
 
 	controller = DofController(IpSetting())
 	stop_event = threading.Event()
-	state = {"paused": False, "continue_armed": False}
+	state = {"paused": False}
 
 	keyboard_thread = threading.Thread(
 		target=_keyboard_control_worker,

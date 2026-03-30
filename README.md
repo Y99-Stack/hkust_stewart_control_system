@@ -1,30 +1,36 @@
 # 6-Axis-Stewart-Force-Control
-pip install -r requirements.txt
-## csv_mode
-PS: 联系厂家确认index
-1. 基础用法
-python main.py --mode csv_move
+Python == 3.12.9
 
-2. 指定文件和监控时间
-python main.py --mode csv_move --csv-path data/my_script.txt --script-monitor 0.5
+If you use conda, follows:
+`conda create -n stewart python==3.9.12`
 
-3. 完整参数
-python main.py --mode csv_move --csv-path data/wave/example2.txt --script-index 2 --script-monitor 1.0
+`conda activate stewart`
+
+`pip install -r requirements.txt`
+
 
 ## point_move
-0. base
+1. base
 python main.py
-1. poistion
+2. poistion(rx_deg,ry_deg,rz_deg,x_m,y_m,z_m)
 python main.py --point-dofs 0.1 0.2 0.3 0.0 0.0 0.0
-1. speed
+3. speed(useless)
 python main.py --point-dofs 0.1 0.2 0.3 0.0 0.0 0.0 --point-speed 0.5 0.5 0.5 0.2 0.2 0.2
 
 # rt_move
-1. 基础用法（默认间隔0.1秒）
+1. 基础用法（默认间隔0.1秒，默认读取 data/wave/example1.txt）
 python main.py --mode rt_move
 
 2. 指定间隔
 python main.py --mode rt_move --rt-interval 0.05
+
+3. 指定位置文件（支持 .txt 或 .csv，按 CSV 读取）
+python main.py --mode rt_move --rt-path data/wave/example1.txt
+
+4. 运行时键盘控制
+按空格键：暂停
+再次按空格键：继续
+按 Q 键：退出
 
 ## sin_move
 1. 基础正弦波（6个自由度）

@@ -72,6 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.1,
         help="Time interval between two rt_move target positions",
     )
+    parser.add_argument(
+        "--rt-path",
+        type=str,
+        default="data/wave/example1.txt",
+        help="Position file path for rt_move (.txt/.csv), default data/wave/example1.txt",
+    )
 
     parser.add_argument(
         "--point-dofs",
@@ -172,6 +178,7 @@ def build_mode_kwargs(args: argparse.Namespace) -> dict:
     if args.mode == "rt_move":
         return {
             "position_interval": args.rt_interval,
+            "position_path": args.rt_path,
         }
 
     if args.mode == "point_move":
