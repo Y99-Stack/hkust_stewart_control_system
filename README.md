@@ -32,6 +32,14 @@ python main.py --mode rt_move --rt-path data/wave/example1.txt
 再次按空格键：继续
 按 Q 键：退出
 
+5. 数据文件格式说明
+   - 第1-3列：角度（rx, ry, rz）
+   - 第4-6列：位置（x, y, z），单位为 mm，读取时自动转换为 m
+   - 第7列：保留列（如有，会被忽略）
+   示例：
+   0,0,0,0,0,0,0
+   0.1,0.2,0.3,10,20,30,0
+
 ## sin_move
 1. 基础正弦波（6个自由度）
 python main.py --mode sin_move --sin-amplitude 0.1 0.1 0.1 0.0 0.0 0.0 --sin-frequency 1.0 1.0 1.0 0.0 0.0 0.0

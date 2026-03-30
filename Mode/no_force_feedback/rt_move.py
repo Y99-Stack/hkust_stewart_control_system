@@ -51,7 +51,14 @@ def _load_target_positions(position_path: str) -> list[list[float]]:
 			except ValueError as exc:
 				raise ValueError(f"Invalid numeric value at line {row_index}: {row}") from exc
 
-			positions.append(values[:6])
+			# Extract first 6 columns: [rx, ry, rz, x_mm, y_mm, z_mm]
+			# Column 7 is reserved and ignored
+			dofs = values[:6]
+			# Convert xyz from mm to m (divide by 1000)
+			dofs[3] /= 1000.0  # x: mm -> m
+			dofs[4] /= 1000.0  # y: mm -> m
+			dofs[5] /= 1000.0  # z: mm -> m
+			positions.append(dofs)
 
 	if not positions:
 		raise ValueError(f"No valid target positions found in file: {position_path}")
